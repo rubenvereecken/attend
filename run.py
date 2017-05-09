@@ -1,10 +1,15 @@
 #!/usr/bin/env python
 
 import argparse
+import inspect
 import os
 import time
 
 import simplejson as json
+
+from defaults import Defaults
+from model import setup_model
+from util import pick
 
 parser = argparse.ArgumentParser(description='Run tests')
 # parser.add_argument('modality', type=str, choices=['A', 'V', 'AV'],
@@ -19,9 +24,13 @@ parser.add_argument('--no_gen_log_dir', dest='gen_log_dir',
                     action='store_false',
                     help="Don't generate timestamped log dir inside `log_dir`" + \
                          " (default True)")
+parser.add_argument('--target', choices=['arousal', 'valence'],
+        default='arousal')
+parser.add_argument('--data_file', type=str, required=True)
 
 parser.set_defaults(
-        gen_log_dir=True
+        gen_log_dir=True,
+        **{k: v for k, v in Defaults.__dict__.items() if not k.startswith('__')}
         )
 
 
@@ -57,6 +66,7 @@ def _save_arguments(args, log_dir):
     with open(file_name, 'w') as f:
         json.dump(args.__dict__, f, sort_keys=True, indent='\t')
 
+
 if __name__ == '__main__':
     args = parser.parse_args()
 
@@ -68,3 +78,5 @@ if __name__ == '__main__':
 
     _save_arguments(args, log_dir)
 
+    # This nifty bit takes all the relevant cmd linen args and passes them on
+    model = setup_model(**pick(args.__dict__, list(inspect.signature(setup_model).parameters)))
