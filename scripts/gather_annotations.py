@@ -47,12 +47,13 @@ def process_dir(params):
     in_dir = params['in_dir']
     out_file = params['out_file']
     vid_name = params['vid_name']
-    print(vid_name)
 
     mat_files = glob.glob(in_dir + '/*.mat')
 
     with h5py.File(out_file) as out:
-        annot = out.require_group('annot')
+        # annot = out.require_group('annot')
+        # Just write to root man
+        annot = out
 
         for mat_file in mat_files:
             # annot_name = _rename(mat_file)
@@ -64,7 +65,10 @@ def process_dir(params):
 
             f = loadmat(mat_file)
             data_key = [key for key in f.keys() if not key.startswith('__')][0]
-            data = f[data_key]
+
+            # For some annoying reason Matlab has it stored as a 1 x N vector
+            # Flatten it into a numpy N, vector
+            data = f[data_key].flatten()
 
             dset = extra.create_dataset(vid_name, data=data)
 

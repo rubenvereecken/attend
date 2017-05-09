@@ -8,7 +8,7 @@ def find_leaf_group_paths(h):
 
     def _walk(h):
         for _, child in h.items():
-            print(child)
+            # print(child)
             if isinstance(child, h5py.Dataset):
                 paths.add(h.name)
                 break
