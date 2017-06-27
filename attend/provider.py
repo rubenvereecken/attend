@@ -8,13 +8,15 @@ def read_and_decode(filename_q, feat_name = 'conflict'):
     _, feature_lists = tf.parse_single_sequence_example(
             serialized_example,
             sequence_features={
-                # 'images': tf.FixedLenSequenceFeature([], dtype=tf.string),
+                'images': tf.FixedLenSequenceFeature([], dtype=tf.string),
                 feat_name: tf.FixedLenSequenceFeature([1], dtype=tf.float32)
                 }
             )
 
-    # return feature_lists['images'], feature_lists[feat_name]
-    return None, feature_lists[feat_name]
+    feature_lists['images'] = tf.decode_raw(feature_lists['images'], tf.float32)
+
+    return feature_lists['images'], feature_lists[feat_name]
+    # return None, feature_lists[feat_name]
 
 
 def input_pipeline(filenames, batch_size, num_epochs=None):
@@ -27,13 +29,13 @@ def input_pipeline(filenames, batch_size, num_epochs=None):
 
         # TODO pad
         # example_batch, target_batch = tf.train.batch(
-        target_batch = tf.train.batch(
-            [target], batch_size=batch_size,
+        example_batch, target_batch = tf.train.batch(
+            [example, target], batch_size=batch_size,
             num_threads=2,
             dynamic_pad=True,
             capacity=32 # TODO look into these values
             )
             # min_after_dequeue=10000)
 
-    # return example_batch, target_batch
-    return None, target_batch
+    return example_batch, target_batch
+    # return None, target_batch
