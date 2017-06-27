@@ -82,7 +82,7 @@ def process_vids(
         frame_names = sorted(glob.glob(vid_dir + '/*jpg'))
         n_all_frames = len(frame_names)
         n_frames = min(n_all_frames, 100) if debug else n_all_frames
-        if n_frames and n_frames > max_frames:
+        if max_frames and n_frames > max_frames:
             print('Skipping {} of length {}'.format(subject_name, n_frames))
             continue
         frame_gen = tqdm((_do_frame(frame) for frame in frame_names[:n_frames]), total=n_frames)
@@ -118,6 +118,7 @@ def process_vids(
                 for frame_name, frame in zip(frame_names, frames):
                     # frame_name = ''.join(frame_name.split('.')[:-1])
                     frame_name = frame_name.split('/')[-1]
+                    frame = frame / max(abs(np.min(frame)), np.max(frame))
                     imsave(vid_out_dir + '/' + frame_name, frame)
 
     writer.close()
