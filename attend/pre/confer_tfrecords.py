@@ -28,6 +28,7 @@ parser.add_argument('--train_frac', type=float, default=2./3,
                     help='Fraction size of training set (< 1)')
 parser.add_argument('-a', '--annot_dir', type=str, default=None, required=True,
                     help='Annotation directory')
+parser.add_argument('--max_frames', type=int)
 parser.add_argument('--debug', dest='debug', action='store_true')
 
 parser.set_defaults(debug=False)
@@ -51,6 +52,7 @@ def process_vids(
         annot_dir,
         out_dir,
         filename,
+        max_frames=None,
         debug=False
         ):
 
@@ -78,7 +80,11 @@ def process_vids(
         vid_name = _vid_name_from_dir(vid_dir)
         subject_name = vid_dir.split('/')[-1]
         frame_names = sorted(glob.glob(vid_dir + '/*jpg'))
-        n_frames = min(len(frame_names), 100) if debug else len(frame_names)
+        n_all_frames = len(frame_names)
+        n_frames = min(n_all_frames, 100) if debug else n_all_frames
+        if n_frames and n_frames > max_frames:
+            print('Skipping {} of length {}'.format(subject_name, n_frames))
+            continue
         frame_gen = tqdm((_do_frame(frame) for frame in frame_names[:n_frames]), total=n_frames)
 
         # In debug mode, keep frames in a list so we can save them
@@ -140,7 +146,7 @@ if __name__ == '__main__':
     train_args = (train_vids[:], args.annot_dir, args.out_dir, 'train')
     test_args = (test_vids[:], args.annot_dir, args.out_dir, 'test')
 
-    run_kwargs = dict(debug=args.debug)
+    run_kwargs = dict(debug=args.debug, max_frames=args.max_frames)
     # run_kwargs['annot_file'] = args.annot_file
 
     process_vids(*train_args, **run_kwargs)
