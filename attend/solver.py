@@ -16,6 +16,7 @@ class AttendSolver():
 
 
     def train(self, data_file, num_epochs, batch_size,
+              log_dir,
               debug=False):
         filename = data_file
         images, targets = input_pipeline([filename], batch_size, num_epochs)
@@ -38,29 +39,34 @@ class AttendSolver():
 
         # from tensorflow.python import debug as tf_debug
         # Create a session for running operations in the Graph.
-        sess = tf.Session()
+        # sess = tf.Session()
 
         # Initialize the variables (like the epoch counter).
-        sess.run(init_op)
 
         # Start input enqueue threads.
         coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+        sv = tf.train.Supervisor(logdir=log_dir)
+        coord = sv.coord
+        with sv.managed_session() as sess:
+        # with tf.Session() as sess:
+            # TODO write down that init is no longer needed
+            # sess.run(init_op)
+            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
-        try:
-            while not coord.should_stop():
-                loss, _ = sess.run([loss_op, train_op])
-                print(loss)
-                break
-                # Run training steps or whatever
-        except tf.errors.OutOfRangeError:
-            print('Done training -- epoch limit reached')
-        finally:
-            # When done, ask the threads to stop.
-            coord.request_stop()
-        # if debug:
-        #     sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+            try:
+                while not coord.should_stop():
+                    loss, _ = sess.run([loss_op, train_op])
+                    print(loss)
+                    break
+                    # Run training steps or whatever
+            except tf.errors.OutOfRangeError:
+                print('Done training -- epoch limit reached')
+            finally:
+                # When done, ask the threads to stop.
+                coord.request_stop()
+            # if debug:
+            #     sess = tf_debug.LocalCLIDebugWrapperSession(sess)
 
-        # Wait for threads to finish.
-        coord.join(threads)
-        sess.close()
+            # Wait for threads to finish.
+            coord.join(threads)
+            sess.close()

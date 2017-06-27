@@ -38,12 +38,20 @@ class AttendModel():
 
         x = features
         x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
-        x = tf.Print(x, [tf.shape(features)], message='Feature shape ')
+        if self.debug:
+            x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
         x = tf.reshape(x, [-1, *self.dim_feature])
         x = self._conv_network(x)
         # x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
 
-        return tf.reduce_sum(x)
+        # Next up
+        # Write a BTT LSTM, for `self.time_steps`
+        # Base self on static RNN
+        # Look at what TFs rnn wrappers do
+        # Don't forget the pretty TensorBoard graph for inspiration
+        # I don't think dynamic LSTMs are needed at this point
+
+        return tf.reduce_sum(tf.slice(x, [0, 0, 0, 0], [0, 0, 0, 1]))
 
 
     def _conv2d(self, x, W, b, stride):

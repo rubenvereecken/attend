@@ -55,12 +55,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.gen_log_dir:
-        log_dir = _gen_log_dir(args.log_dir)
+        args.log_dir = _gen_log_dir(args.log_dir)
     else:
-        log_dir = args.log_dir
-        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(args.log_dir, exist_ok=True)
 
-    _save_arguments(args, log_dir)
+    _save_arguments(args, args.log_dir)
 
     # model = setup_model(**pick(args.__dict__, list(inspect.signature(setup_model).parameters)))
     # solver = SEWASolver(None)
@@ -72,7 +71,9 @@ if __name__ == '__main__':
     model = all_args['model']
 
     # The actual training bit
+    import inspect
     # solver = AttendSolver(**pick(all_args, list(inspect.signature(AttendSolver.__init__).parameters)))
     solver = AttendSolver(model, update_rule='adam', learning_rate=0.01)
-    # solver.train(**pick(all_args, list(inspect.signature(solver.train).parameters)))
-    solver.train(args.data_file, 20, 1)
+    solver.train(**pick(all_args, list(inspect.signature(solver.train).parameters)))
+    # print(pick(all_args, list(inspect.signature(solver.train).parameters)))
+    # solver.train(args.data_file, 20, 1, log_dir=args.log_dir)
