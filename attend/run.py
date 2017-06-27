@@ -78,5 +78,7 @@ if __name__ == '__main__':
 
     _save_arguments(args, log_dir)
 
+    # TODO set up a logging module to be used, global-like
+
     # This nifty bit takes all the relevant cmd linen args and passes them on
     model = setup_model(**pick(args.__dict__, list(inspect.signature(setup_model).parameters)))

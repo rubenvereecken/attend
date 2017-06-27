@@ -3,12 +3,41 @@ import tensorflow.contrib.keras as K
 from tensorflow.contrib.keras import applications as apps
 
 from fuel.datasets.hdf5 import H5PYDataset
+from fuel.streams import DataStream
 
-# from keras.layers import Dense, Dropout, Flatten, Convolution2D, MaxPooling2D, BatchNormalization, RepeatVector
-# from keras.models import Sequential
-# from ..layers import linREG, softmaxPDF, ordinalPDF
-
+from callbacks import TensorBoard
 from schemes import InfiniteSequentialBatchIterator as InfSeqBatchIterator
+
+
+class AttendModel():
+    def __init__(self, batch_size=None):
+
+        # self.batch_size = batch_size
+
+        # self.features = tf.placeholder(tf.float32, [batch_size, *dim_feat])
+        # self.targets = tf.placeholder(tf.float32, [batch_size, n_time_step])
+        pass
+
+
+    # TODO split this up in predict and loss or something
+    def build_model(self, features, targets):
+        """Build the entire model
+
+        Args:
+            features: Feature batch Tensor (from provider)
+            targets: Targets batch Tensor
+        """
+
+        print(features, targets)
+        batch_size = tf.shape(targets)[0]
+        # batch_size = features
+
+        # print(tf.random_normal([]))
+        loss = tf.Variable(tf.random_normal([]))
+        loss = tf.Print(loss, [batch_size], message='batch size')
+
+        return loss
+
 
 def linear_reg(nb_outputs, dropout=.5, norm=True, sizes=[512, 512]):
 
@@ -33,6 +62,8 @@ def setup_model(
         target,
         data_file,
         batch_size,
+        steps_per_epoch,
+        epochs,
         log_dir
         ):
     # Define the datasets
@@ -46,6 +77,9 @@ def setup_model(
             batch_size=batch_size)
     te_scheme = InfSeqBatchIterator(examples=te_set.num_examples,
             batch_size=batch_size)
+
+    tr_stream = DataStream(dataset=tr_set, iteration_scheme=tr_scheme)
+    te_stream = DataStream(dataset=te_set, iteration_scheme=te_scheme)
 
     # input_layer = K.layers.Input(tr_set.source_shapes[0].shape[1:])
     base_model = apps.ResNet50(weights = 'imagenet')
@@ -66,18 +100,19 @@ def setup_model(
             )
 
     model.fit_generator(
-            generator=DataStream(dataset=tr_set, iteration_scheme=tr_scheme,
-            validation_data=DataStream(dataset=te_set, iteration_scheme=te_scheme,
+            generator=tr_stream.get_epoch_iterator(),
             steps_per_epoch=steps_per_epoch,
             epochs=epochs,
             max_q_size=10,
-            nb_val_examples=100,
+            # nb_val_samples=100,
+            validation_data=te_stream.get_epoch_iterator(),
+            validation_steps=100,
             callbacks=[
-                K.callbacks.TensorBoard(log_dir=log_dir),
+                # K.callbacks.TensorBoard(log_dir=log_dir),
+                TensorBoard(log_dir=log_dir),
                 K.callbacks.CSVLogger(filename=log_dir + '/logger.csv'),
                 K.callbacks.ModelCheckpoint(log_dir + '/model.h5'),
                 ]
-                ))
             )
 
     return model
