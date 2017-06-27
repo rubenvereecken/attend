@@ -10,7 +10,7 @@ import tensorflow as tf
 
 
 class AttendModel():
-    def __init__(self, batch_size=None):
+    def __init__(self, batch_size=None, debug=True):
 
         # self.batch_size = batch_size
         self.dim_feature = (224, 224, 3)
@@ -20,7 +20,8 @@ class AttendModel():
         # self.features = tf.placeholder(tf.float32, [batch_size, *dim_feat])
         # self.targets = tf.placeholder(tf.float32, [batch_size, n_time_step])
         self.conv_weight_initializer = tf.random_normal
-        pass
+
+        self.debug = debug
 
 
     # TODO split this up in predict and loss or something
@@ -40,14 +41,14 @@ class AttendModel():
         x = tf.Print(x, [tf.shape(features)], message='Feature shape ')
         x = tf.reshape(x, [-1, *self.dim_feature])
         x = self._conv_network(x)
-        x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
+        # x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
 
         return tf.reduce_sum(x)
 
 
     def _conv2d(self, x, W, b, stride):
         x = tf.nn.conv2d(x, W, strides=[1, stride, stride, 1], padding='SAME')
-        x = tf.nn.bias_add(x, b)
+        x = tf.nn.bias_add(x, b, name='conv2d_bias')
         x = tf.nn.relu(x)
         return x
 
@@ -58,6 +59,11 @@ class AttendModel():
 
 
     def _conv_network(self, x):
+        """ConvNet: 5 conv layers, 3 avg pooling layers
+
+        Out
+            x: output Tensor (T, 14, 14, 512)
+        """
         conv_filters = [
             [3, 3, self.n_channels, 96],
             [3, 3, 96, 256],
@@ -80,7 +86,8 @@ class AttendModel():
             if pool_windows[i]:
                 x = self._avg_pool(x, pool_windows[i], pool_strides[i])
 
-        print (x.get_shape().as_list())
+        if self.debug:
+            x = tf.Print(x, [tf.shape(x)], message='Conv2d output shape ')
         # Fully connected layer
 	# Reshape conv2 output to fit fully connected layer input
         # TODO change this once attention on images in place
@@ -90,6 +97,13 @@ class AttendModel():
 	# fc1 = tf.nn.relu(fc1)
 	# # Apply Dropout
 	# fc1 = tf.nn.dropout(fc1, dropout)
+        W = tf.Variable(self.conv_weight_initializer([512, 512]))
+        b = tf.Variable(self.conv_weight_initializer([512]))
+        # TODO it's fine switching them right
+        x = tf.einsum('ijkl,lm->ijkm', x, W)
+        # x = tf.reshape(x, [-1, 512])
+        # x = tf.matmul(x, W)
+        x = tf.nn.bias_add(x, b, name='fc_bias')
 
         return x
 

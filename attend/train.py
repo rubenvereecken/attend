@@ -48,7 +48,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int)
 
     parser.set_defaults(
-            gen_log_dir=True, debug=False,
+            gen_log_dir=True, debug=True,
             **{k: v for k, v in Defaults.__dict__.items() if not k.startswith('__')}
             )
 
