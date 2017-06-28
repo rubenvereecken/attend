@@ -1,25 +1,26 @@
+import numpy as np
 import tensorflow as tf
-# import tensorflow.contrib.keras as K
-# from tensorflow.contrib.keras import applications as apps
-
-# from fuel.datasets.hdf5 import H5PYDataset
-# from fuel.streams import DataStream
-
-# from callbacks import TensorBoard
-# from schemes import InfiniteSequentialBatchIterator as InfSeqBatchIterator
 
 
 class AttendModel():
-    def __init__(self, batch_size=None, debug=True):
+    def __init__(self, loss_fun='mse', batch_size=None, debug=True):
 
         # self.batch_size = batch_size
         self.dim_feature = (224, 224, 3)
         self.n_channels = self.dim_feature[2]
         self.num_steps = 20
+        self.H = 512
 
         # self.features = tf.placeholder(tf.float32, [batch_size, *dim_feat])
         # self.targets = tf.placeholder(tf.float32, [batch_size, n_time_step])
         self.conv_weight_initializer = tf.random_normal
+        self.weight_initializer = tf.contrib.layers.xavier_initializer()
+        self.const_initializer = tf.constant_initializer(0.0)
+
+        if loss_fun == 'mse':
+            self.loss_fun = tf.losses.mean_squared_error
+        else:
+            raise Exception()
 
         self.debug = debug
 
@@ -34,24 +35,88 @@ class AttendModel():
         """
 
         batch_size = tf.shape(targets)[0]
+        # Output decode time steps
         T = tf.shape(targets)[1]
 
+        # TODO consider batch normalizing features instead of mean subtract
         x = features
         x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
         if self.debug:
             x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
         x = tf.reshape(x, [-1, *self.dim_feature])
         x = self._conv_network(x)
-        # x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
+        D_conv = x.shape[1:] # 14 x 14 x 512
+        x = tf.reshape(x, [batch_size, -1, *D_conv.as_list()]) # B, T, D0, D1, D2
+        # TODO consider stacked lstm
+        # https://www.tensorflow.org/images/attention_seq2seq.png (tutorials/seq2seq)
 
-        # Next up
-        # Write a BTT LSTM, for `self.time_steps`
-        # Base self on static RNN
-        # Look at what TFs rnn wrappers do
-        # Don't forget the pretty TensorBoard graph for inspiration
-        # I don't think dynamic LSTMs are needed at this point
+        # 14 x 14 x 512
+        D_feat = np.prod(D_conv)
 
-        return tf.reduce_sum(tf.slice(x, [0, 0, 0, 0], [0, 0, 0, 1]))
+        c, h = self._initial_lstm(x)
+        # TODO that other implementation projects the features first
+        lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
+
+        outputs = []
+
+        for t in range(T):
+            # TODO this will become attention
+            context = x[:,t,:]
+            # Flatten conv2d output
+            context = tf.reshape(x, [batch_size, -1])
+
+            if t == 0:
+                # Fill with null values first go because there is no previous
+                # Assumes target dim of 1 per time step
+                true_prev_target = tf.zeros([batch_size, 1])
+            else:
+                # Feed back in last true input
+                true_prev_target = targets[:, t, :]
+
+            # TODO bring scope outside?
+            with tf.variable_scope('decode_lstm', reuse=(t!=0)):
+                _, (c, h) = lstm_cell(inputs=tf.concat([true_prev_target, context], 1),
+                        state=[c, h])
+                h = tf.Print(h, [tf.shape(h)], message='h shape ')
+
+            output = self._decode(h, dropout=True, reuse=(t!=0))
+            outputs.append(c)
+
+        outputs = tf.pack(outputs)
+        loss = self.loss_fun(targets, outputs)
+
+        # TODO if using padded sequences, mask the loss or mask something
+
+        # return tf.reduce_sum(tf.slice(c, [0, 0, 0, 0], [0, 0, 0, 1]))
+        return loss
+
+
+    def _decode(self, h, dropout=False, reuse=False):
+        with tf.variable_scope('decode', reuse=False):
+            W = tf.get_variable('W', [h.shape[2], 1], initializer=self.weight_initializer)
+            b = tf.get_variable('b', [1], initializer=self.const_initializer)
+            out = tf.nn.sigmoid(tf.matmul(h, W) + b)
+            return out
+
+
+
+    def _initial_lstm(self, features, reuse=False):
+        """Initialize LSTM cell and hidden
+        h = mean(x) * w_h + b_h
+        c = mean(x) * w_c + b_c
+        """
+        D = np.prod(features.shape[2:])
+        with tf.variable_scope('initial_lstm'):
+            features_mean = tf.reduce_mean(features, 1)
+
+            w_h = tf.get_variable('w_h', [D, self.H], initializer=self.weight_initializer)
+            b_h = tf.get_variable('b_h', [self.H], initializer=self.const_initializer)
+            h = tf.nn.tanh(tf.matmul(features_mean, w_h) + b_h)
+
+            w_c = tf.get_variable('w_c', [D, self.H], initializer=self.weight_initializer)
+            b_c = tf.get_variable('b_c', [self.H], initializer=self.const_initializer)
+            c = tf.nn.tanh(tf.matmul(features_mean, w_c) + b_c)
+            return c, h
 
 
     def _conv2d(self, x, W, b, stride):
@@ -95,23 +160,15 @@ class AttendModel():
                 x = self._avg_pool(x, pool_windows[i], pool_strides[i])
 
         if self.debug:
-            x = tf.Print(x, [tf.shape(x)], message='Conv2d output shape ')
+            x = tf.Print(x, [tf.shape(x)[1:]], message='Conv2d output shape ')
         # Fully connected layer
 	# Reshape conv2 output to fit fully connected layer input
         # TODO change this once attention on images in place
-        # W = tf.Variable(self.conv_weight_initializer([]))
-	# x = tf.reshape(x, [-1, weights['wd1'].get_shape().as_list()[0]])
-	# fc1 = tf.add(tf.matmul(fc1, weights['wd1']), biases['bd1'])
-	# fc1 = tf.nn.relu(fc1)
-	# # Apply Dropout
-	# fc1 = tf.nn.dropout(fc1, dropout)
-        W = tf.Variable(self.conv_weight_initializer([512, 512]))
-        b = tf.Variable(self.conv_weight_initializer([512]))
+        # W = tf.Variable(self.conv_weight_initializer([512, 512]))
+        # b = tf.Variable(self.conv_weight_initializer([512]))
         # TODO it's fine switching them right
-        x = tf.einsum('ijkl,lm->ijkm', x, W)
-        # x = tf.reshape(x, [-1, 512])
-        # x = tf.matmul(x, W)
-        x = tf.nn.bias_add(x, b, name='fc_bias')
+        # x = tf.einsum('ijkl,lm->ijkm', x, W)
+        # x = tf.nn.bias_add(x, b, name='fc_bias')
 
         return x
 
