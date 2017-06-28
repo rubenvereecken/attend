@@ -68,9 +68,10 @@ def process_vids(
 
     def _float32_feature(value):
         return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
-
     def _float32_featurelist(value):
         return tf.train.FeatureList(feature=list(map(_float32_feature, value)))
+    def _int64_feature(value):
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
     def _bytes_feature(value):
         return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
@@ -104,7 +105,14 @@ def process_vids(
                 conflict=_float32_featurelist(annot)
                 )
 
+        context = tf.train.Features(feature=dict(
+                subject=_bytes_feature(subject_name.encode('utf-8')),
+                video=_bytes_feature(vid_name.encode('utf-8')),
+                num_frames=_int64_feature(n_frames)
+            ))
+
         example = tf.train.SequenceExample(
+                context=context,
                 feature_lists=tf.train.FeatureLists(feature_list=features))
 
         writer.write(example.SerializeToString())
