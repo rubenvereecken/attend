@@ -35,6 +35,10 @@ class AttendModel():
             raise Exception()
 
         self.debug = debug
+        if debug:
+            self.conv = 'small'
+        else:
+            self.conv = 'convnet'
 
 
     # TODO split this up in predict and loss or something
@@ -77,7 +81,6 @@ class AttendModel():
         # c, h = self._initial_lstm(x)
         c = state_saver.state('lstm_c')
         h = state_saver.state('lstm_h')
-        c = tf.Print(c, [state_saver.key], message='state key ')
 
         # TODO that other implementation projects the features first
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
@@ -113,18 +116,22 @@ class AttendModel():
                     state_saver.save_state('lstm_c', c),
                     state_saver.save_state('lstm_h', h)
             )
-        # Makes it easier by just injecting the save state control op
+        # Makes it eaoutputssier by just injecting the save state control op
         # into the rest of the computation graph, but also makes it messy
         # TODO execute it separately
         with tf.control_dependencies([save_state]):
             with tf.variable_scope('loss'):
-                outputs = tf.squeeze(tf.stack(outputs)) # B x T
+                outputs = tf.squeeze(tf.stack(outputs, axis=1)) # B x T
                 # TODO squeeze elsewhere man
                 targets = tf.squeeze(targets)
+                # outputs = tf.Print(outputs, [tf.shape(outputs)], message='outputs shape ')
+                # targets = tf.Print(targets, [tf.shape(targets)], message='targets shape ')
 
                 # Tails of sequences are likely padded, so create a mask to ignore padding
                 mask = tf.cast(tf.sequence_mask(state_saver.length, T), tf.int32)
                 loss = self.loss_fun(targets, outputs, weights=mask)
+
+        loss = tf.Print(loss, [loss], message='loss ')
 
         return loss
 
@@ -175,16 +182,29 @@ class AttendModel():
         Out
             x: output Tensor (T, 14, 14, 512)
         """
-        conv_filters = [
-            [3, 3, self.n_channels, 96],
-            [3, 3, 96, 256],
-            [3, 3, 256, 512],
-            [3, 3, 512, 512],
-            [3, 3, 512, 512]
-        ]
-        pool_windows = [3, 3, 0, 0, 3]
-        conv_strides = [1, 2, 1, 1, 1]
-        pool_strides = [2, 2, 0, 0, 2]
+        if self.conv == 'convnet':
+            conv_filters = [
+                [3, 3, self.n_channels, 96],
+                [3, 3, 96, 256],
+                [3, 3, 256, 512],
+                [3, 3, 512, 512],
+                [3, 3, 512, 512]
+            ]
+            pool_windows = [3, 3, 0, 0, 3]
+            # pool_windows = [3, 3, 3, 0, 3]
+            conv_strides = [1, 2, 1, 1, 1]
+            pool_strides = [2, 2, 0, 0, 2]
+            # pool_strides = [2, 2, 2, 0, 2]
+        elif self.conv == 'small':
+            conv_filters = [
+                [3, 3, self.n_channels, 96],
+                [3, 3, 96, 128],
+                [3, 3, 128, 256],
+                [3, 3, 256, 256],
+            ]
+            pool_windows = [4, 4, 3, 3]
+            conv_strides = [2, 2, 1, 1]
+            pool_strides = [2, 2, 2, 2]
 
         with tf.variable_scope('ConvNet'):
             for i in range(len(conv_filters)):
@@ -194,11 +214,13 @@ class AttendModel():
 
                     # Apply 2D convolution
                     x = self._conv2d(x, W, b, stride=conv_strides[i])
+                    print(x.shape)
 
                 # Apply avg pooling if required
                 if pool_windows[i]:
                     with tf.variable_scope('pool{}'.format(i)):
                         x = self._avg_pool(x, pool_windows[i], pool_strides[i])
+                        print(x.shape)
 
             if self.debug:
                 x = tf.Print(x, [tf.shape(x)[1:]], message='Conv2d output shape ')

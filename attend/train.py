@@ -43,12 +43,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', dest='data_file')
     parser.add_argument('--debug', dest='debug', action='store_true')
+    parser.add_argument('--no-debug', dest='debug', action='store_false')
     parser.add_argument('--log_dir', type=str, default='log',
                         help='Directory to hold logs')
     parser.add_argument('--batch_size', type=int)
 
     parser.set_defaults(
-            gen_log_dir=True, debug=True,
+            gen_log_dir=True, debug=False,
             **{k: v for k, v in Defaults.__dict__.items() if not k.startswith('__')}
             )
 
@@ -64,6 +65,9 @@ if __name__ == '__main__':
     # model = setup_model(**pick(args.__dict__, list(inspect.signature(setup_model).parameters)))
     # solver = SEWASolver(None)
     all_args = args.__dict__.copy()
+
+    if not all_args['debug']:
+        print('NOT running in debug mode!')
 
     import inspect
     from attend.model import AttendModel

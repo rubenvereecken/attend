@@ -20,63 +20,66 @@ class AttendSolver():
 
         # For now, its results are stored inside the provider
         provider.batch_sequences_with_states()
-        # images, targets = input_pipeline([filename], batch_size,
-        #         time_steps=time_steps, num_epochs=num_epochs)
 
-        # Build a graph that computes the loss
-        # loss = self.model.build_model(images, targets)
-
-
-        # with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+        global_step = tf.Variable(0, trainable=False, name='global_step')
         loss_op = self.model.build_model(provider)
-
 
         with tf.name_scope('optimizer'):
             optimizer = self.optimizer(learning_rate=self.learning_rate)
+            # train_op = optimizer.minimize(loss_op, global_step=global_step,
+            #         var_list=tf.trainable_variables())
             grads = tf.gradients(loss_op, tf.trainable_variables())
             grads_and_vars = list(zip(grads, tf.trainable_variables()))
-            train_op = optimizer.apply_gradients(grads_and_vars=grads_and_vars)
+            train_op = optimizer.apply_gradients(grads_and_vars=grads_and_vars,
+                    global_step=global_step)
 
         # Initialize variables
+        # The Supervisor actually runs this automatically, but I'm keeping this
         init_op = tf.group(tf.global_variables_initializer(),
                         tf.local_variables_initializer())
 
+        # TODO one of these silly summary ops makes the model run twice the first time
+        # Summary op
+        tf.summary.scalar('batch_loss', loss_op)
+        # for var in tf.trainable_variables():
+        #     tf.summary.histogram(var.op.name, var)
+        # for grad, var in grads_and_vars:
+        #     tf.summary.histogram(var.op.name+'/gradient', grad)
 
-        # from tensorflow.python import debug as tf_debug
-        # Create a session for running operations in the Graph.
-        # sess = tf.Session()
+        # The Supervisor already merges all summaries but I like explicit
+        summary_op = tf.summary.merge_all()
 
-        # Initialize the variables (like the epoch counter).
+        # The Supervisor saves summaries after X seconds, not good for model progressions
+        sv = tf.train.Supervisor(logdir=log_dir, summary_op=summary_op,
+                save_summaries_secs=0)
+        if debug:
+            config = tf.ConfigProto(
+                intra_op_parallelism_threads=4
+            )
+        else:
+            config = tf.ConfigProto()
 
-        # Start input enqueue threads.
-        coord = tf.train.Coordinator()
-        sv = tf.train.Supervisor(logdir=log_dir)
-        coord = sv.coord
-        config = tf.ConfigProto(
-            intra_op_parallelism_threads=4
-        )
+        # Managed session will do the necessary init_ops, start queue runners,
+        # start checkpointing/summary service
+        # It will also recover from a checkpoint if available
         with sv.managed_session(config=config) as sess:
-        # with tf.Session() as sess:
-            # TODO write down that init is no longer needed
-            # sess.run(init_op)
-            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+            summary_writer = tf.summary.FileWriter(log_dir)
 
             try:
                 while not sv.should_stop():
                     loss, _ = sess.run([loss_op, train_op])
-                    print('TEST')
-                    print(loss)
+                    global_step_value = tf.train.global_step(sess, global_step)
+                    # summary = sess.run(summary_op)
+                    # summary_writer.add_summary(summary, global_step_value)
                     # Run training steps or whatever
             except tf.errors.OutOfRangeError:
                 print('Done training -- epoch limit reached')
+            except Exception as e:
+                print(e)
             finally:
-                print('AHM DONE')
                 # When done, ask the threads to stop.
                 sv.request_stop()
 
             # Wait for threads to finish.
-            coord.join(threads)
+            sv.coord.join(threads)
             sess.close()
-            print('Finished', loss)
-            import sys
-            sys.stdout.flush()

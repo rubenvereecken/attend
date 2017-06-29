@@ -54,18 +54,18 @@ class Provider():
                 }
 
             batch = tf.contrib.training.batch_sequences_with_states(
-                    input_key=context['subject'],
                     input_sequences={
                         'images': example,
                         self.feat_name: target,
-                        },
-                    input_context=context,
-                    input_length=tf.cast(context['num_frames'], tf.int32),
-                    initial_states=initial_states,
-                    num_unroll=self.time_steps,
-                    batch_size=self.batch_size,
-                    num_threads=2,
-                    capacity=self.batch_size * 2 * 2
+                    },
+                    input_key      = context['subject'],
+                    input_context  = context,
+                    input_length   = tf.cast(context['num_frames'], tf.int32),
+                    initial_states = initial_states,
+                    num_unroll     = self.time_steps,
+                    batch_size     = self.batch_size,
+                    num_threads    = 2,
+                    capacity       = self.batch_size * 2 * 2
                     )
             example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]
 
