@@ -3,13 +3,23 @@ import tensorflow as tf
 
 
 class AttendModel():
-    def __init__(self, loss_fun='mse', batch_size=None, debug=True):
+    def __init__(self, dim_feature=(224, 224, 3), loss_fun='mse', time_steps=None, debug=True):
+        """
+
+        Arguments:
+            time_steps: For BPTT, or None for dynamic LSTM (unimplemented)
+
+        """
 
         # self.batch_size = batch_size
-        self.dim_feature = (224, 224, 3)
+        self.dim_feature = dim_feature
         self.n_channels = self.dim_feature[2]
         self.num_steps = 20
         self.H = 512
+
+        # If None, it's variable, if an int, it's known. Can also be Tensor
+        self.T = time_steps
+        assert not self.T is None, "Remove this once other feat implemented"
 
         # self.features = tf.placeholder(tf.float32, [batch_size, *dim_feat])
         # self.targets = tf.placeholder(tf.float32, [batch_size, n_time_step])
@@ -35,8 +45,7 @@ class AttendModel():
         """
 
         batch_size = tf.shape(targets)[0]
-        # Output decode time steps
-        T = tf.shape(targets)[1]
+        T = self.T if not self.T is None else tf.shape(targets[1])
 
         # TODO consider batch normalizing features instead of mean subtract
         x = features
@@ -53,6 +62,9 @@ class AttendModel():
         # 14 x 14 x 512
         D_feat = np.prod(D_conv)
 
+        # Flatten conv2d output
+        x = tf.reshape(x, [batch_size, -1, D_feat.value]) # B, T, 14*14*512
+
         c, h = self._initial_lstm(x)
         # TODO that other implementation projects the features first
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
@@ -62,8 +74,6 @@ class AttendModel():
         for t in range(T):
             # TODO this will become attention
             context = x[:,t,:]
-            # Flatten conv2d output
-            context = tf.reshape(x, [batch_size, -1])
 
             if t == 0:
                 # Fill with null values first go because there is no previous
@@ -71,18 +81,19 @@ class AttendModel():
                 true_prev_target = tf.zeros([batch_size, 1])
             else:
                 # Feed back in last true input
-                true_prev_target = targets[:, t, :]
+                # print(targets.shape)
+                true_prev_target = targets[:, t]
 
             # TODO bring scope outside?
             with tf.variable_scope('decode_lstm', reuse=(t!=0)):
                 _, (c, h) = lstm_cell(inputs=tf.concat([true_prev_target, context], 1),
                         state=[c, h])
-                h = tf.Print(h, [tf.shape(h)], message='h shape ')
 
             output = self._decode(h, dropout=True, reuse=(t!=0))
-            outputs.append(c)
+            outputs.append(output)
 
-        outputs = tf.pack(outputs)
+        outputs = tf.stack(outputs)
+        print(outputs.shape)
         loss = self.loss_fun(targets, outputs)
 
         # TODO if using padded sequences, mask the loss or mask something
@@ -92,8 +103,8 @@ class AttendModel():
 
 
     def _decode(self, h, dropout=False, reuse=False):
-        with tf.variable_scope('decode', reuse=False):
-            W = tf.get_variable('W', [h.shape[2], 1], initializer=self.weight_initializer)
+        with tf.variable_scope('decode', reuse=reuse):
+            W = tf.get_variable('W', [h.shape[1], 1], initializer=self.weight_initializer)
             b = tf.get_variable('b', [1], initializer=self.const_initializer)
             out = tf.nn.sigmoid(tf.matmul(h, W) + b)
             return out
@@ -116,7 +127,7 @@ class AttendModel():
             w_c = tf.get_variable('w_c', [D, self.H], initializer=self.weight_initializer)
             b_c = tf.get_variable('b_c', [self.H], initializer=self.const_initializer)
             c = tf.nn.tanh(tf.matmul(features_mean, w_c) + b_c)
-            return c, h
+        return c, h
 
 
     def _conv2d(self, x, W, b, stride):

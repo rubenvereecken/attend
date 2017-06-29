@@ -65,13 +65,13 @@ if __name__ == '__main__':
     # solver = SEWASolver(None)
     all_args = args.__dict__.copy()
 
+    import inspect
     from attend.model import AttendModel
-    # all_args['model'] = AttendModel(**pick(all_args, list(inspect.signature(AttendModel.__init__).parameters)))
-    all_args['model'] = AttendModel()
+    all_args['model'] = AttendModel(**pick(all_args, list(inspect.signature(AttendModel.__init__).parameters)))
+    # all_args['model'] = AttendModel()
     model = all_args['model']
 
     # The actual training bit
-    import inspect
     # solver = AttendSolver(**pick(all_args, list(inspect.signature(AttendSolver.__init__).parameters)))
     solver = AttendSolver(model, update_rule='adam', learning_rate=0.01)
     solver.train(**pick(all_args, list(inspect.signature(solver.train).parameters)))

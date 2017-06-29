@@ -15,11 +15,12 @@ class AttendSolver():
             raise Exception()
 
 
-    def train(self, data_file, num_epochs, batch_size,
+    def train(self, data_file, num_epochs, batch_size, time_steps,
               log_dir,
               debug=False):
         filename = data_file
-        images, targets = input_pipeline([filename], batch_size, num_epochs)
+        images, targets = input_pipeline([filename], batch_size,
+                time_steps=time_steps, num_epochs=num_epochs)
 
         # Build a graph that computes the loss
         # loss = self.model.build_model(images, targets)
@@ -47,7 +48,10 @@ class AttendSolver():
         coord = tf.train.Coordinator()
         sv = tf.train.Supervisor(logdir=log_dir)
         coord = sv.coord
-        with sv.managed_session() as sess:
+        config = tf.ConfigProto(
+            intra_op_parallelism_threads=4
+        )
+        with sv.managed_session(config=config) as sess:
         # with tf.Session() as sess:
             # TODO write down that init is no longer needed
             # sess.run(init_op)
