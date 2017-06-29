@@ -79,9 +79,6 @@ class AttendModel():
         h = state_saver.state('lstm_h')
         c = tf.Print(c, [state_saver.key], message='state key ')
 
-        # Tails of sequences are likely padded, so create a mask to ignore padding
-        mask = tf.cast(tf.sequence_mask(state_saver.length, T), tf.int32)
-
         # TODO that other implementation projects the features first
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
 
@@ -111,22 +108,23 @@ class AttendModel():
                     outputs.append(output)
 
         # Saves LSTM state so decoding can continue like normal in a next call
-        save_state = tf.group(
-                state_saver.save_state('lstm_c', c),
-                state_saver.save_state('lstm_h', h)
-        )
+        with tf.name_scope('save_state'):
+            save_state = tf.group(
+                    state_saver.save_state('lstm_c', c),
+                    state_saver.save_state('lstm_h', h)
+            )
         # Makes it easier by just injecting the save state control op
         # into the rest of the computation graph, but also makes it messy
         # TODO execute it separately
         with tf.control_dependencies([save_state]):
-            outputs = tf.squeeze(tf.stack(outputs))
-            # TODO squeeze elsewhere man
-            targets = tf.squeeze(targets)
-            loss = self.loss_fun(targets, outputs, weights=mask)
+            with tf.variable_scope('loss'):
+                outputs = tf.squeeze(tf.stack(outputs)) # B x T
+                # TODO squeeze elsewhere man
+                targets = tf.squeeze(targets)
 
-
-
-        # TODO if using padded sequences, mask the loss or mask something
+                # Tails of sequences are likely padded, so create a mask to ignore padding
+                mask = tf.cast(tf.sequence_mask(state_saver.length, T), tf.int32)
+                loss = self.loss_fun(targets, outputs, weights=mask)
 
         return loss
 
