@@ -1,6 +1,4 @@
 import tensorflow as tf
-from attend.provider import input_pipeline
-# from sewa.model import SEWAModel
 
 class AttendSolver():
     def __init__(self, model, update_rule, learning_rate):
@@ -15,19 +13,25 @@ class AttendSolver():
             raise Exception()
 
 
-    def train(self, data_file, num_epochs, batch_size, time_steps,
+    def train(self, num_epochs, batch_size, time_steps,
+              provider, # TODO not really used?
               log_dir,
               debug=False):
-        filename = data_file
-        images, targets = input_pipeline([filename], batch_size,
-                time_steps=time_steps, num_epochs=num_epochs)
+
+        # For now, its results are stored inside the provider
+        provider.batch_sequences_with_states()
+        # images, targets = input_pipeline([filename], batch_size,
+        #         time_steps=time_steps, num_epochs=num_epochs)
 
         # Build a graph that computes the loss
         # loss = self.model.build_model(images, targets)
 
 
-        with tf.variable_scope(tf.get_variable_scope(), reuse=False):
-            loss_op = self.model.build_model(images, targets)
+        # with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+        loss_op = self.model.build_model(provider)
+
+
+        with tf.name_scope('optimizer'):
             optimizer = self.optimizer(learning_rate=self.learning_rate)
             grads = tf.gradients(loss_op, tf.trainable_variables())
             grads_and_vars = list(zip(grads, tf.trainable_variables()))
@@ -58,19 +62,21 @@ class AttendSolver():
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
             try:
-                while not coord.should_stop():
+                while not sv.should_stop():
                     loss, _ = sess.run([loss_op, train_op])
+                    print('TEST')
                     print(loss)
-                    break
                     # Run training steps or whatever
             except tf.errors.OutOfRangeError:
                 print('Done training -- epoch limit reached')
             finally:
+                print('AHM DONE')
                 # When done, ask the threads to stop.
-                coord.request_stop()
-            # if debug:
-            #     sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+                sv.request_stop()
 
             # Wait for threads to finish.
             coord.join(threads)
             sess.close()
+            print('Finished', loss)
+            import sys
+            sys.stdout.flush()

@@ -1,3 +1,4 @@
+import inspect
 
 
 def pick(dic, l):
@@ -6,3 +7,7 @@ def pick(dic, l):
     After the spirit of Lodash pick
     '''
     return { k: v for k, v in dic.items() if k in l }
+
+
+def params_for(fun):
+    return list(inspect.signature(fun).parameters)

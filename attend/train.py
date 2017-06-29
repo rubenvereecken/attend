@@ -9,7 +9,7 @@ import simplejson as json
 
 from attend.defaults import Defaults
 from attend.solver import AttendSolver
-from attend.util import pick
+from attend.util import *
 
 
 def _gen_log_dir(base_dir):
@@ -67,7 +67,11 @@ if __name__ == '__main__':
 
     import inspect
     from attend.model import AttendModel
-    all_args['model'] = AttendModel(**pick(all_args, list(inspect.signature(AttendModel.__init__).parameters)))
+    from attend.provider import Provider
+
+    all_args['filenames'] = [all_args['data_file']]
+    all_args['provider'] = Provider(**pick(all_args, params_for(Provider.__init__)))
+    all_args['model'] = AttendModel(**pick(all_args, params_for(AttendModel.__init__)))
     # all_args['model'] = AttendModel()
     model = all_args['model']
 
