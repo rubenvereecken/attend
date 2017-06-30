@@ -51,16 +51,18 @@ class AttendModel():
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
 
-        batch_size = tf.shape(targets)[0]
         T = self.T if not self.T is None else tf.shape(targets[1])
 
-        # TODO consider batch normalizing features instead of mean subtract
+        # Consider batch normalizing features instead of mean subtract
         x = features
-        x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
-        if self.debug:
-            x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
+
+        with tf.variable_scope('input_shape'):
+            batch_size = tf.shape(targets)[0]
+            x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
+            if self.debug:
+                x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
+
         x = self.encoder(x, state_saver)
-        print(x.shape)
 
         # c, h = self._initial_lstm(x)
         c = state_saver.state('lstm_c')
@@ -123,8 +125,8 @@ class AttendModel():
 
     def _decode(self, h, dropout=False, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):
-            W = tf.get_variable('W', [h.shape[1], 1], initializer=self.weight_initializer)
-            b = tf.get_variable('b', [1], initializer=self.const_initializer)
+            W = tf.get_variable('W', [h.shape[1], 1], initializer=self.weight_initializer, name='W')
+            b = tf.get_variable('b', [1], initializer=self.const_initializer, name='b')
             out = tf.nn.sigmoid(tf.matmul(h, W) + b)
             return out
 

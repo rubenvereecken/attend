@@ -44,7 +44,6 @@ class Encoder():
                 return conv_out.shape.as_list()[1:]
 
 
-
     def _conv2d(self, x, W, b, stride):
         x = tf.nn.conv2d(x, W, strides=[1, stride, stride, 1], padding='SAME')
         x = tf.nn.bias_add(x, b, name='conv2d_bias')
@@ -91,6 +90,8 @@ class Encoder():
             self.pool_windows = [4, 4, 3, 3]
             self.conv_strides = [2, 2, 1, 1]
             self.pool_strides = [2, 2, 2, 2]
+        else:
+            raise Exception('Unkown conv impl {}'.format(self.conv_impl))
 
         dim_feature = x.shape.as_list()[2:]
 
@@ -99,8 +100,8 @@ class Encoder():
 
             for i in range(len(self.conv_filters)):
                 with tf.variable_scope('conv{}'.format(i)):
-                    W = tf.Variable(self.weight_initializer(self.conv_filters[i]))
-                    b = tf.Variable(self.weight_initializer([self.conv_filters[i][-1]]))
+                    W = tf.Variable(self.weight_initializer(self.conv_filters[i]), name='W')
+                    b = tf.Variable(self.weight_initializer([self.conv_filters[i][-1]]), name='b')
 
                     # Apply 2D convolution
                     x = self._conv2d(x, W, b, stride=self.conv_strides[i])
@@ -157,7 +158,3 @@ class Encoder():
             out = tf.stack(out, axis=1)
 
             return out
-
-
-
-

@@ -48,6 +48,7 @@ if __name__ == '__main__':
                         help='Directory to hold logs')
     parser.add_argument('--batch_size', type=int)
     parser.add_argument('--encode_hidden_units', type=int)
+    parser.add_argument('--conv_impl', type=str)
 
     parser.set_defaults(
             gen_log_dir=True, debug=False,

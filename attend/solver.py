@@ -44,8 +44,8 @@ class AttendSolver():
         # TODO one of these silly summary ops makes the model run twice the first time
         # Summary op
         tf.summary.scalar('batch_loss', loss_op)
-        # for var in tf.trainable_variables():
-        #     tf.summary.histogram(var.op.name, var)
+        for var in tf.trainable_variables():
+            tf.summary.histogram(var.op.name, var)
         # for grad, var in grads_and_vars:
         #     tf.summary.histogram(var.op.name+'/gradient', grad)
 
@@ -72,8 +72,8 @@ class AttendSolver():
                 while not sv.should_stop():
                     loss, _ = sess.run([loss_op, train_op])
                     global_step_value = tf.train.global_step(sess, global_step)
-                    # summary = sess.run(summary_op)
-                    # summary_writer.add_summary(summary, global_step_value)
+                    summary = sess.run(summary_op)
+                    summary_writer.add_summary(summary, global_step_value)
                     # Run training steps or whatever
             except tf.errors.OutOfRangeError:
                 print('Done training -- epoch limit reached')
