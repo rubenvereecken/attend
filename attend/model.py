@@ -125,8 +125,8 @@ class AttendModel():
 
     def _decode(self, h, dropout=False, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):
-            W = tf.get_variable('W', [h.shape[1], 1], initializer=self.weight_initializer, name='W')
-            b = tf.get_variable('b', [1], initializer=self.const_initializer, name='b')
+            W = tf.get_variable('W', [h.shape[1], 1], initializer=self.weight_initializer)
+            b = tf.get_variable('b', [1], initializer=self.const_initializer)
             out = tf.nn.sigmoid(tf.matmul(h, W) + b)
             return out
 

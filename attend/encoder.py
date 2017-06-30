@@ -3,9 +3,10 @@ import numpy as np
 
 
 class Encoder():
-    def __init__(self, encode_hidden_units=0, time_steps=None, debug=True, conv_impl=None):
+    def __init__(self, batch_size, encode_hidden_units=0, time_steps=None, debug=True, conv_impl=None):
         self.debug = debug
         self.encode_lstm = encode_hidden_units > 0
+        self.batch_size = batch_size # TODO this will go
 
         if conv_impl is None and debug:
             self.conv_impl = 'small'
@@ -136,7 +137,7 @@ class Encoder():
             D_feat = np.prod(D_conv) # 14 x 14 x 512
 
             # Flatten conv2d output
-            x = tf.reshape(x, [2, self.time_steps, D_feat.value]) # B, T, 14*14*512
+            x = tf.reshape(x, [self.batch_size, self.time_steps, D_feat.value]) # B, T, 14*14*512
 
         return x
 
@@ -155,6 +156,7 @@ class Encoder():
                     state_saver=state_saver,
                     state_name=(Provider.ENCODE_LSTM_C, Provider.ENCODE_LSTM_H))
             # TODO for some weird reason their implementation needs a batch size
+            # So let's do our own once the time's there
             out = tf.stack(out, axis=1)
 
             return out
