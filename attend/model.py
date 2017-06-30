@@ -3,7 +3,7 @@ import tensorflow as tf
 
 
 class AttendModel():
-    def __init__(self, provider, loss_fun='mse', time_steps=None, debug=True):
+    def __init__(self, provider, encoder, num_hidden=512, loss_fun='mse', time_steps=None, debug=True):
         """
 
         Arguments:
@@ -12,12 +12,14 @@ class AttendModel():
         """
 
         self.provider = provider
+        self.encoder = encoder
 
         # self.batch_size = batch_size
-        self.dim_feature = provider.dim_feature
+        # self.dim_feature = provider.dim_feature
+        self.dim_feature = [224, 224, 3]
         self.n_channels = self.dim_feature[2]
         # self.num_steps = 20
-        self.H = 512
+        self.H = num_hidden
 
         # If None, it's variable, if an int, it's known. Can also be Tensor
         self.T = time_steps
@@ -25,7 +27,6 @@ class AttendModel():
 
         # self.features = tf.placeholder(tf.float32, [batch_size, *dim_feat])
         # self.targets = tf.placeholder(tf.float32, [batch_size, n_time_step])
-        self.conv_weight_initializer = tf.random_normal
         self.weight_initializer = tf.contrib.layers.xavier_initializer()
         self.const_initializer = tf.constant_initializer(0.0)
 
@@ -35,10 +36,6 @@ class AttendModel():
             raise Exception()
 
         self.debug = debug
-        if debug:
-            self.conv = 'small'
-        else:
-            self.conv = 'convnet'
 
 
     # TODO split this up in predict and loss or something
@@ -62,25 +59,13 @@ class AttendModel():
         x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
         if self.debug:
             x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
-        x = tf.reshape(x, [-1, *self.dim_feature])
-        x = self._conv_network(x)
-        D_conv = x.shape[1:] # 14 x 14 x 512
-
-        with tf.name_scope('conv_reshape'):
-            x = tf.reshape(x, [batch_size, -1, *D_conv.as_list()]) # B, T, D0, D1, D2
-            # TODO consider stacked lstm
-            # https://www.tensorflow.org/images/attention_seq2seq.png (tutorials/seq2seq)
-
-            # 14 x 14 x 512
-            D_feat = np.prod(D_conv)
-
-            # Flatten conv2d output
-            x = tf.reshape(x, [batch_size, -1, D_feat.value]) # B, T, 14*14*512
-
+        x = self.encoder(x, state_saver)
+        print(x.shape)
 
         # c, h = self._initial_lstm(x)
         c = state_saver.state('lstm_c')
         h = state_saver.state('lstm_h')
+        history = state_saver.state('history')
 
         # TODO that other implementation projects the features first
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
@@ -144,7 +129,6 @@ class AttendModel():
             return out
 
 
-
     def _initial_lstm(self, features, reuse=False):
         """Initialize LSTM cell and hidden
         h = mean(x) * w_h + b_h
@@ -164,76 +148,6 @@ class AttendModel():
         return c, h
 
 
-    def _conv2d(self, x, W, b, stride):
-        x = tf.nn.conv2d(x, W, strides=[1, stride, stride, 1], padding='SAME')
-        x = tf.nn.bias_add(x, b, name='conv2d_bias')
-        x = tf.nn.relu(x)
-        return x
-
-
-    def _avg_pool(self, x, window, stride):
-        return tf.nn.avg_pool(x, ksize=[1, window, window, 1],
-                              strides=[1, stride, stride, 1], padding='SAME')
-
-
-    def _conv_network(self, x):
-        """ConvNet: 5 conv layers, 3 avg pooling layers
-
-        Out
-            x: output Tensor (T, 14, 14, 512)
-        """
-        if self.conv == 'convnet':
-            conv_filters = [
-                [3, 3, self.n_channels, 96],
-                [3, 3, 96, 256],
-                [3, 3, 256, 512],
-                [3, 3, 512, 512],
-                [3, 3, 512, 512]
-            ]
-            pool_windows = [3, 3, 0, 0, 3]
-            # pool_windows = [3, 3, 3, 0, 3]
-            conv_strides = [1, 2, 1, 1, 1]
-            pool_strides = [2, 2, 0, 0, 2]
-            # pool_strides = [2, 2, 2, 0, 2]
-        elif self.conv == 'small':
-            conv_filters = [
-                [3, 3, self.n_channels, 96],
-                [3, 3, 96, 128],
-                [3, 3, 128, 256],
-                [3, 3, 256, 256],
-            ]
-            pool_windows = [4, 4, 3, 3]
-            conv_strides = [2, 2, 1, 1]
-            pool_strides = [2, 2, 2, 2]
-
-        with tf.variable_scope('ConvNet'):
-            for i in range(len(conv_filters)):
-                with tf.variable_scope('conv{}'.format(i)):
-                    W = tf.Variable(self.conv_weight_initializer(conv_filters[i]))
-                    b = tf.Variable(self.conv_weight_initializer([conv_filters[i][-1]]))
-
-                    # Apply 2D convolution
-                    x = self._conv2d(x, W, b, stride=conv_strides[i])
-                    print(x.shape)
-
-                # Apply avg pooling if required
-                if pool_windows[i]:
-                    with tf.variable_scope('pool{}'.format(i)):
-                        x = self._avg_pool(x, pool_windows[i], pool_strides[i])
-                        print(x.shape)
-
-            if self.debug:
-                x = tf.Print(x, [tf.shape(x)[1:]], message='Conv2d output shape ')
-            # Fully connected layer
-            # Reshape conv2 output to fit fully connected layer input
-            # TODO change this once attention on images in place
-            # W = tf.Variable(self.conv_weight_initializer([512, 512]))
-            # b = tf.Variable(self.conv_weight_initializer([512]))
-            # TODO it's fine switching them right
-            # x = tf.einsum('ijkl,lm->ijkm', x, W)
-            # x = tf.nn.bias_add(x, b, name='fc_bias')
-
-        return x
 
 
 

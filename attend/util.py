@@ -11,3 +11,11 @@ def pick(dic, l):
 
 def params_for(fun):
     return list(inspect.signature(fun).parameters)
+
+
+def call_with(fun, d):
+    return fun(**pick(d, params_for(fun)))
+
+
+def init_with(cls, d):
+    return cls(**pick(d, params_for(cls.__init__)))

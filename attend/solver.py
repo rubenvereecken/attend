@@ -1,5 +1,7 @@
 import tensorflow as tf
 
+from util import *
+
 class AttendSolver():
     def __init__(self, model, update_rule, learning_rate):
         self.model = model
@@ -15,6 +17,7 @@ class AttendSolver():
 
     def train(self, num_epochs, batch_size, time_steps,
               provider, # TODO not really used?
+              encoder,
               log_dir,
               debug=False):
 

@@ -47,6 +47,7 @@ if __name__ == '__main__':
     parser.add_argument('--log_dir', type=str, default='log',
                         help='Directory to hold logs')
     parser.add_argument('--batch_size', type=int)
+    parser.add_argument('--encode_hidden_units', type=int)
 
     parser.set_defaults(
             gen_log_dir=True, debug=False,
@@ -68,12 +69,19 @@ if __name__ == '__main__':
 
     if not all_args['debug']:
         print('NOT running in debug mode!')
+    # Easy bool to pass around
+    all_args['encode_lstm'] = all_args['encode_hidden_units'] > 0
 
     import inspect
     from attend.model import AttendModel
     from attend.provider import Provider
+    from attend.encoder import Encoder
 
     all_args['filenames'] = [all_args['data_file']]
+    # Bit annoying to create the encoder separately, but it's needed by both
+    # the provider (for dimensionality deduction) and the model
+    # The goal is to have the provider set up asap so it can start reading
+    all_args['encoder'] = init_with(Encoder, all_args)
     all_args['provider'] = Provider(**pick(all_args, params_for(Provider.__init__)))
     all_args['model'] = AttendModel(**pick(all_args, params_for(AttendModel.__init__)))
     # all_args['model'] = AttendModel()

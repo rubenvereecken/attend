@@ -5,6 +5,9 @@ class Defaults:
     num_epochs      = 20
     learning_rate   = 0.01
     time_steps      = 100
+    num_hidden      = 512
+    conv_impl       = 'small'
+    encode_hidden_units = 0
 
     update_rule     = 'adam'
 
