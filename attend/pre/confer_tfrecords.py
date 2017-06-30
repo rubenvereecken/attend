@@ -115,7 +115,12 @@ def process_vids(
                 context=context,
                 feature_lists=tf.train.FeatureLists(feature_list=features))
 
-        writer.write(example.SerializeToString())
+        try:
+            writer.write(example.SerializeToString())
+        except Exception as e:
+            print(e)
+            print(subject_name)
+            continue
 
         if debug:
             import warnings
