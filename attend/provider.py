@@ -68,7 +68,7 @@ class Provider():
                     'lstm_c': tf.zeros([self.H], dtype=tf.float32),
                     'lstm_h': tf.zeros([self.H], dtype=tf.float32),
                     # Keep the previous batch around too for extra history
-                    'history': tf.zeros([self.batch_size, self.T, np.prod(self.encoded_dim)], dtype=tf.float32),
+                    # 'history': tf.zeros([self.batch_size, self.T, np.prod(self.encoded_dim)], dtype=tf.float32),
                     'first': tf.constant(True)
                 }
 

@@ -67,7 +67,7 @@ class AttendModel():
         # c, h = self._initial_lstm(x)
         c = state_saver.state('lstm_c')
         h = state_saver.state('lstm_h')
-        history = state_saver.state('history')
+        # history = state_saver.state('history')
 
         # TODO that other implementation projects the features first
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
