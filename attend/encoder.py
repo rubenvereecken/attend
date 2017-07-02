@@ -88,7 +88,7 @@ class Encoder():
                 [3, 3, 128, 256],
                 [3, 3, 256, 256],
             ]
-            self.pool_windows = [4, 4, 3, 3]
+            self.pool_windows = [3, 3, 0, 3]
             self.conv_strides = [2, 2, 1, 1]
             self.pool_strides = [2, 2, 2, 2]
         else:
@@ -127,6 +127,7 @@ class Encoder():
         print('Built convnet in {:.3f}s'.format(time.time()-start))
 
         D_conv = x.shape[1:] # 14 x 14 x 512
+        print(D_conv)
 
         with tf.name_scope('conv_reshape'):
             # This you would use for spatial attention
