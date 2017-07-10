@@ -80,9 +80,8 @@ class AttendSolver():
             except Exception as e:
                 print(e)
             finally:
-                # When done, ask the threads to stop.
-                sv.request_stop()
+                # Requests the coordinator to stop, joins threads
+                # and closes the summary writer if enabled through supervisor
+                sv.stop()
 
-            # Wait for threads to finish.
-            sv.coord.join(threads)
             sess.close()
