@@ -3,7 +3,7 @@ import numpy as np
 
 
 class Encoder():
-    ALLOWED_CONV_IMPLS = ['small', 'convnet', 'resnet']
+    ALLOWED_CONV_IMPLS = ['small', 'convnet', 'resnet', 'vggface']
 
     def __init__(self, batch_size, encode_hidden_units=0, time_steps=None, debug=True, conv_impl=None):
         self.debug = debug
@@ -64,6 +64,8 @@ class Encoder():
     def conv_network(self, x):
         if self.conv_impl == 'resnet':
             x = self._build_resnet(x)
+        elif self.conv_impl == 'vggface':
+            x = self._build_vggface(x)
         else:
             x = self._build_conv_network(x)
 
@@ -104,6 +106,19 @@ class Encoder():
         resnet_conv = K.models.Model(resnet.input, out_layer)
         # resnet.summary()
         out = resnet_conv(x)
+        return out
+
+
+    def _build_vggface(self, x, out_layer='pool5'):
+        import tensorflow.contrib.keras as K
+        from keras_vggface.vggface import VGGFace
+        K.backend.set_learning_phase(True) # TODO change to 0 for test
+
+        vgg_model = VGGFace(include_top=False, input_shape=(224, 224, 3),
+                            pooling='avg')
+        out_layer = vgg_model.get_layer(out_layer).output
+        vgg_conv = K.models.Model(vgg_model.input, out_layer)
+        out = vgg_conv(x)
         return out
 
 
