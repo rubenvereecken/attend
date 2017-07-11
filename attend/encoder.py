@@ -3,6 +3,8 @@ import numpy as np
 
 
 class Encoder():
+    ALLOWED_CONV_IMPLS = ['small', 'convnet', 'resnet']
+
     def __init__(self, batch_size, encode_hidden_units=0, time_steps=None, debug=True, conv_impl=None):
         self.debug = debug
         self.encode_lstm = encode_hidden_units > 0
@@ -14,6 +16,8 @@ class Encoder():
             self.conv_impl = 'convnet'
         else:
             self.conv_impl = conv_impl
+
+        assert conv_impl in Encoder.ALLOWED_CONV_IMPLS
 
         if encode_hidden_units: assert not time_steps is None, 'need time steps for encode lstm'
         self.encode_hidden_units = encode_hidden_units
@@ -58,6 +62,52 @@ class Encoder():
 
 
     def conv_network(self, x):
+        if self.conv_impl == 'resnet':
+            x = self._build_resnet(x)
+        else:
+            x = self._build_conv_network(x)
+
+        D_conv = x.shape[1:] # 14 x 14 x 512 for example
+        print(D_conv)
+
+        with tf.name_scope('conv_reshape'):
+            # This you would use for spatial attention
+            # x = tf.reshape(x, [batch_size, -1, *D_conv.as_list()]) # B, T, D0, D1, D2
+            # TODO consider stacked lstm
+            # https://www.tensorflow.org/images/attention_seq2seq.png (tutorials/seq2seq)
+
+            D_feat = np.prod(D_conv) # 14 x 14 x 512
+
+            # Flatten conv2d output
+            x = tf.reshape(x, [self.batch_size, self.time_steps, D_feat.value]) # B, T, 14*14*512
+
+        print(x.shape)
+
+        return x
+
+
+    def _build_resnet(self, x, out_layer='avg_pool'):
+        import tensorflow.contrib.keras as K
+        K.backend.set_learning_phase(True) # TODO change to 0 for test
+
+        dim_feature = tuple(x.shape.as_list()[2:])
+        with tf.name_scope('conv_reshape'):
+            x = tf.reshape(x, [-1, *dim_feature])
+
+        resnet = K.applications.ResNet50(
+                include_top=False,
+                weights='imagenet',
+                # input_tensor=x,
+                input_shape=dim_feature)
+
+        out_layer = resnet.get_layer(out_layer).output
+        resnet_conv = K.models.Model(resnet.input, out_layer)
+        # resnet.summary()
+        out = resnet_conv(x)
+        return out
+
+
+    def _build_conv_network(self, x):
         """ConvNet: 5 conv layers, 3 avg pooling layers
         Arguments
             x: input Tensor (B, T, D0,...)
@@ -96,8 +146,10 @@ class Encoder():
 
         dim_feature = x.shape.as_list()[2:]
 
-        with tf.variable_scope('ConvNet'):
+        with tf.name_scope('conv_reshape'):
             x = tf.reshape(x, [-1, *dim_feature])
+
+        with tf.variable_scope('ConvNet'):
 
             for i in range(len(self.conv_filters)):
                 with tf.variable_scope('conv{}'.format(i)):
@@ -125,20 +177,6 @@ class Encoder():
             # x = tf.nn.bias_add(x, b, name='fc_bias')
 
         print('Built convnet in {:.3f}s'.format(time.time()-start))
-
-        D_conv = x.shape[1:] # 14 x 14 x 512
-        print(D_conv)
-
-        with tf.name_scope('conv_reshape'):
-            # This you would use for spatial attention
-            # x = tf.reshape(x, [batch_size, -1, *D_conv.as_list()]) # B, T, D0, D1, D2
-            # TODO consider stacked lstm
-            # https://www.tensorflow.org/images/attention_seq2seq.png (tutorials/seq2seq)
-
-            D_feat = np.prod(D_conv) # 14 x 14 x 512
-
-            # Flatten conv2d output
-            x = tf.reshape(x, [self.batch_size, self.time_steps, D_feat.value]) # B, T, 14*14*512
 
         return x
 

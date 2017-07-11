@@ -7,7 +7,7 @@ class Defaults:
     time_steps      = 100
     num_hidden      = 512
     conv_impl       = 'small'
-    encode_hidden_units = 0
+    encode_hidden_units = 512
 
     update_rule     = 'adam'
 

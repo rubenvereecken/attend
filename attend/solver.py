@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 from util import *
 
@@ -35,6 +36,11 @@ class AttendSolver():
             grads_and_vars = list(zip(grads, tf.trainable_variables()))
             train_op = optimizer.apply_gradients(grads_and_vars=grads_and_vars,
                     global_step=global_step)
+            for v in tf.trainable_variables():
+                print(v)
+                print(v.shape)
+            num_vars = np.sum(list(map(lambda v: np.prod(v.shape), tf.trainable_variables())))
+            print('Total trainable vars {}'.format(num_vars))
 
         # Initialize variables
         # The Supervisor actually runs this automatically, but I'm keeping this
@@ -74,6 +80,7 @@ class AttendSolver():
                     global_step_value = tf.train.global_step(sess, global_step)
                     summary = sess.run(summary_op)
                     summary_writer.add_summary(summary, global_step_value)
+                    break
                     # Run training steps or whatever
             except tf.errors.OutOfRangeError:
                 print('Done training -- epoch limit reached')
