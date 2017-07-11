@@ -70,7 +70,6 @@ class Encoder():
             x = self._build_conv_network(x)
 
         D_conv = x.shape[1:] # 14 x 14 x 512 for example
-        print(D_conv)
 
         with tf.name_scope('conv_reshape'):
             # This you would use for spatial attention
@@ -109,17 +108,26 @@ class Encoder():
         return out
 
 
-    def _build_vggface(self, x, out_layer='pool5'):
+    def _build_vggface(self, x, out_layer='global_average_pooling2d_1'):
+        """
+        out_layer: 'pool5' for 7x7x512
+                   'global_average_pooling2d_1' for x512 (flat)
+        """
         import tensorflow.contrib.keras as K
         from keras_vggface.vggface import VGGFace
         K.backend.set_learning_phase(True) # TODO change to 0 for test
 
-        vgg_model = VGGFace(include_top=False, input_shape=(224, 224, 3),
+        dim_feature = tuple(x.shape.as_list()[2:])
+        with tf.name_scope('conv_reshape'):
+            x = tf.reshape(x, [-1, *dim_feature])
+
+        vgg_model = VGGFace(include_top=False, input_shape=dim_feature,
                             pooling='avg')
         out_layer = vgg_model.get_layer(out_layer).output
         vgg_conv = K.models.Model(vgg_model.input, out_layer)
         out = vgg_conv(x)
-        return out
+
+        return out # 7 x 7 x 512 or None x 512
 
 
     def _build_conv_network(self, x):
@@ -173,13 +181,11 @@ class Encoder():
 
                     # Apply 2D convolution
                     x = self._conv2d(x, W, b, stride=self.conv_strides[i])
-                    # print(x.shape)
 
                 # Apply avg pooling if required
                 if self.pool_windows[i]:
                     with tf.variable_scope('pool{}'.format(i)):
                         x = self._avg_pool(x, self.pool_windows[i], self.pool_strides[i])
-                        # print(x.shape)
 
             if self.debug:
                 x = tf.Print(x, [tf.shape(x)[1:]], message='Conv2d output shape ')
