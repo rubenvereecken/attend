@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+from time import time
 
 from util import *
 
@@ -74,18 +75,22 @@ class AttendSolver():
         with sv.managed_session(config=config) as sess:
             summary_writer = tf.summary.FileWriter(log_dir)
 
+            t_start = time()
+
             try:
                 while not sv.should_stop():
                     loss, _ = sess.run([loss_op, train_op])
                     global_step_value = tf.train.global_step(sess, global_step)
                     summary = sess.run(summary_op)
                     summary_writer.add_summary(summary, global_step_value)
-                    break
+                    import pdb; pdb.set_trace()
                     # Run training steps or whatever
             except tf.errors.OutOfRangeError:
                 print('Done training -- epoch limit reached')
+                notify('Done training', 'Took {:.1f}s'.format(time() - t_start))
             except Exception as e:
                 print(e)
+                notify('Error occurred', 'Took {:.1f}s'.format(time() - t_start))
             finally:
                 # Requests the coordinator to stop, joins threads
                 # and closes the summary writer if enabled through supervisor

@@ -19,3 +19,8 @@ def call_with(fun, d):
 
 def init_with(cls, d):
     return cls(**pick(d, params_for(cls.__init__)))
+
+
+def notify(title, text='', duration=5000):
+    import subprocess as s
+    s.call(['notify-send', title, text])
