@@ -30,29 +30,8 @@ parser.add_argument('-o', '--out', type=str, default='out/features.hdf5',
 parser.add_argument('-f', '--feature', type=str, required=True, choices=AVAILABLE_MODELS)
 parser.add_argument('--debug', dest='debug', action='store_true')
 parser.add_argument('--batch_size', type=int, default=32)
-# parser.add_argument('--model', type=str, required=True,
-#         choice=['resnet50', 'vggface'])
-# parser.add_argument('--layer', type=str)
 
 parser.set_defaults(debug=False)
-
-class BatchedFrameGenerator:
-    def __init__(self, name, frame_names, batch_size, feature_dim, batch_processor):
-        self.name = name
-        self.frame_names = frame_names
-        self.n_frames = len(frame_names)
-        self.n_batches = np.ceil(self.n_frames / batch_size)
-        self.batches = util.batch(frame_names, batch_size)
-        self.batch_processor = batch_processor
-        self.feature_dim = feature_dim
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        batch = next(self.batches)
-        return self.batch_processor(batch)
-
 
 def process_vids(
         vid_dirs,
@@ -70,27 +49,34 @@ def process_vids(
         return model.predict(images)
 
 
-    for vid_dir in (vid_dirs):
-        # Really the subject name..
-        vid_name = vid_dir.split('/')[-1]
-        frame_names = sorted(glob.glob(vid_dir + '/*'))
+    def _video_gen():
+        for vid_dir in (vid_dirs):
+            # Really the subject name..
+            vid_name = vid_dir.split('/')[-1]
+            frame_names = sorted(glob.glob(vid_dir + '/*'))
 
-        frame_gen = BatchedFrameGenerator(vid_name, frame_names,
-                batch_size, feature_dim, _do_frames)
-        yield frame_gen
+            _frame_gen = (_do_frames(batch) for batch in
+                    util.batch(frame_names, batch_size))
+            frame_gen = util.LengthyGenerator(_frame_gen, len(frame_names))
+            frame_gen['feature_dim'] = feature_dim
+            frame_gen['name'] = vid_name
+            yield frame_gen
+
+    video_gen = util.LengthyGenerator(_video_gen(), len(vid_dirs))
+    return video_gen
 
 
-def save_to_hdf5(vid_gen, out):
+def save_to_hdf5(vid_gen, out, n_vids):
     with h5py.File(out) as out:
         features = out.require_group('features')
 
-        for frames_gen in vid_gen:
-            vid_name = frames_gen.name
-            dset_dims = (frames_gen.n_frames, *frames_gen.feature_dim)
+        for frames_gen in tqdm(vid_gen, desc='video'):
+            vid_name = frames_gen['name']
+            dset_dims = (len(frames_gen), *frames_gen['feature_dim'])
             vid_dset = features.create_dataset(vid_name, dset_dims, dtype=np.float32)
             offset = 0
 
-            for batch in tqdm(frames_gen, total=frames_gen.n_batches):
+            for batch in tqdm(frames_gen, desc='batch'):
                 batch_size = batch.shape[0]
                 vid_dset[offset:offset+batch_size] = batch
                 offset += batch_size
@@ -123,7 +109,7 @@ def main():
             debug=args.debug, batch_size=args.batch_size)
 
     # Write out the batches of features
-    writers[out_ext](vids, args.out)
+    writers[out_ext](vids, args.out, len(vid_dirs))
 
 
 if __name__ == '__main__':

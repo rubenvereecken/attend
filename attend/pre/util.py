@@ -28,3 +28,31 @@ def makedirs_if_needed(file_or_dir):
 def rm_if_needed(file):
     if os.path.exists(file):
         os.remove(file)
+
+
+class LengthyGenerator(dict):
+    """
+    Generator wrapper for when the generator length is known beforehand.
+    Plays nicely with tqdm, for example.
+    Also supports a minimal `dict` interface for attaching metadata.
+    """
+
+    def __init__(self, generator, length):
+        self.generator = generator
+        self.length = length
+        self._dict = {}
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, key):
+        return self._dict[key]
+
+    def __setitem__(self, key, value):
+        self._dict[key] = value
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self.generator)
