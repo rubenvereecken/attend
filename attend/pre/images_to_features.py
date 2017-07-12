@@ -1,0 +1,92 @@
+#!/usr/bin/env python
+
+import math
+import glob
+import h5py
+import itertools
+import numpy as np
+import multiprocessing
+import argparse
+import os
+import shutil
+
+from threading import Thread
+from skimage.io import imread, imsave
+from scipy.io.matlab import loadmat
+import skimage.transform
+
+from tqdm import tqdm
+
+from attend.pre.util import *
+
+
+parser = argparse.ArgumentParser(description='Convert frame images to hf5 and preprocess')
+parser.add_argument('-i', '--in_dir', type=str,
+                    help='input frames directory, containing subfolders')
+parser.add_argument('-o', '--out_dir', type=str, default='out/confer-images',
+                    help='dir to write output images to')
+parser.add_argument('-f', '--feature', type=str, required=True,
+        choice=['vggface_conv', 'vggface_pool'])
+parser.add_argument('--max_frames', type=int)
+parser.add_argument('--debug', dest='debug', action='store_true')
+
+parser.set_defaults(debug=False)
+
+
+def _vid_name_from_dir(d):
+    return d.split('/')[-2]
+
+
+def process_vids(
+        vid_dirs,
+        out_dir,
+        max_frames=None,
+        debug=False
+        ):
+
+    def _do_frame(frame_file):
+        img = imread(frame_file)
+        bbox, bbox_pts, pts = face.extract_bbox(img, mode='face_detect')
+        return bbox[0]
+
+    import faceKit as face
+
+    for vid_dir in (vid_dirs):
+        vid_name = _vid_name_from_dir(vid_dir)
+        subject_name = vid_dir.split('/')[-1]
+        frame_names = sorted(glob.glob(vid_dir + '/*png'))
+        n_all_frames = len(frame_names)
+        n_frames = min(n_all_frames, 100) if debug else n_all_frames
+        if max_frames and n_frames > max_frames:
+            print('Skipping {} of length {}'.format(subject_name, n_frames))
+            continue
+        frame_gen = tqdm((_do_frame(frame) for frame in frame_names[:n_frames]), total=n_frames)
+
+        # In debug mode, keep frames in a list so we can save them
+        frames = list(frame_gen)
+
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            vid_out_dir = out_dir + '/' + subject_name
+            os.makedirs(vid_out_dir)
+            for frame_name, frame in zip(frame_names, frames):
+                # frame_name = ''.join(frame_name.split('.')[:-1])
+                frame_name = frame_name.split('/')[-1]
+                frame = frame / max(abs(np.min(frame)), np.max(frame))
+                imsave(vid_out_dir + '/' + frame_name, frame)
+
+
+if __name__ == '__main__':
+    args = parser.parse_args()
+
+    if args.out_dir != '.':
+        shutil.rmtree(args.out_dir, ignore_errors=True)
+
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    vid_dirs = list(_find_deepest_dirs(args.in_dir))
+    assert len(vid_dirs) != 0, 'Could not find any vids'
+    print(len(vid_dirs))
+
+    process_vids(vid_dirs, args.out_dir, max_frames=args.max_frames, debug=args.debug)
