@@ -21,7 +21,7 @@ from attend.pre.util import *
 
 
 parser = argparse.ArgumentParser(description='Convert frame images to hf5 and preprocess')
-parser.add_argument('-i', '--in_dir', type=str,
+parser.add_argument('-i', '--in_dir', type=str, required=True,
                     help='input frames directory, containing subfolders')
 parser.add_argument('-o', '--out_dir', type=str, default='out/confer-images',
                     help='dir to write output images to')
@@ -76,8 +76,11 @@ def process_vids(
                 imsave(vid_out_dir + '/' + frame_name, frame)
 
 
-if __name__ == '__main__':
+def main():
     args = parser.parse_args()
+
+    if not os.path.isdir(args.in_dir):
+        raise Exception('Input directory `{}` does not exist'.format(args.in_dir))
 
     if args.out_dir != '.':
         shutil.rmtree(args.out_dir, ignore_errors=True)
@@ -89,3 +92,8 @@ if __name__ == '__main__':
     print(len(vid_dirs))
 
     process_vids(vid_dirs, args.out_dir, max_frames=args.max_frames, debug=args.debug)
+
+
+if __name__ == '__main__':
+    main()
+
