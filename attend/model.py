@@ -16,9 +16,8 @@ class AttendModel():
 
         # self.batch_size = batch_size
         # self.dim_feature = provider.dim_feature
-        self.dim_feature = [224, 224, 3]
-        self.n_channels = self.dim_feature[2]
-        # self.num_steps = 20
+        # self.dim_feature = [224, 224, 3]
+        self.dim_feature = provider.dim_feature
         self.H = num_hidden
 
         # If None, it's variable, if an int, it's known. Can also be Tensor

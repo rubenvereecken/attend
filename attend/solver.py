@@ -37,9 +37,9 @@ class AttendSolver():
             grads_and_vars = list(zip(grads, tf.trainable_variables()))
             train_op = optimizer.apply_gradients(grads_and_vars=grads_and_vars,
                     global_step=global_step)
-            for v in tf.trainable_variables():
-                print(v)
-                print(v.shape)
+            # for v in tf.trainable_variables():
+            #     print(v)
+            #     print(v.shape)
             num_vars = np.sum(list(map(lambda v: np.prod(v.shape), tf.trainable_variables())))
             print('Total trainable vars {}'.format(num_vars))
 
@@ -60,11 +60,12 @@ class AttendSolver():
         summary_op = tf.summary.merge_all()
 
         # The Supervisor saves summaries after X seconds, not good for model progressions
-        sv = tf.train.Supervisor(logdir=log_dir, summary_op=summary_op,
-                save_summaries_secs=0)
+        # sv = tf.train.Supervisor(logdir=log_dir, summary_op=summary_op,
+                # save_summaries_secs=0)
+        coord = tf.train.Coordinator()
         if debug:
             config = tf.ConfigProto(
-                intra_op_parallelism_threads=4
+                intra_op_parallelism_threads=1
             )
         else:
             config = tf.ConfigProto()
@@ -72,13 +73,17 @@ class AttendSolver():
         # Managed session will do the necessary init_ops, start queue runners,
         # start checkpointing/summary service
         # It will also recover from a checkpoint if available
-        with sv.managed_session(config=config) as sess:
+        # with sv.managed_session(config=config) as sess:
+        with tf.Session() as sess:
+            sess.run(init_op)
+            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
             summary_writer = tf.summary.FileWriter(log_dir)
 
             t_start = time()
 
             try:
-                while not sv.should_stop():
+                # while not sv.should_stop():
+                while not coord.should_stop():
                     loss, _ = sess.run([loss_op, train_op])
                     global_step_value = tf.train.global_step(sess, global_step)
                     summary = sess.run(summary_op)
@@ -94,6 +99,8 @@ class AttendSolver():
             finally:
                 # Requests the coordinator to stop, joins threads
                 # and closes the summary writer if enabled through supervisor
-                sv.stop()
+                # sv.stop()
+                coord.join(threads)
+                coord.stop()
 
             sess.close()

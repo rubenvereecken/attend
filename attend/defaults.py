@@ -6,7 +6,7 @@ class Defaults:
     learning_rate   = 0.01
     time_steps      = 100
     num_hidden      = 512
-    conv_impl       = 'small'
+    conv_impl       = 'none'
     encode_hidden_units = 512
 
     update_rule     = 'adam'

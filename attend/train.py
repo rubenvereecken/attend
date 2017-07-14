@@ -41,7 +41,7 @@ def _save_arguments(args, log_dir):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', dest='data_file')
+    parser.add_argument('-i', dest='data_file', required=True)
     parser.add_argument('--debug', dest='debug', action='store_true')
     parser.add_argument('--no-debug', dest='debug', action='store_false')
     parser.add_argument('--log_dir', type=str, default='log',
@@ -82,8 +82,9 @@ if __name__ == '__main__':
     # Bit annoying to create the encoder separately, but it's needed by both
     # the provider (for dimensionality deduction) and the model
     # The goal is to have the provider set up asap so it can start reading
+    # all_args['provider'] = Provider(**pick(all_args, params_for(Provider.__init__)))
     all_args['encoder'] = init_with(Encoder, all_args)
-    all_args['provider'] = Provider(**pick(all_args, params_for(Provider.__init__)))
+    all_args['provider'] = init_with(Provider, all_args)
     all_args['model'] = AttendModel(**pick(all_args, params_for(AttendModel.__init__)))
     # all_args['model'] = AttendModel()
     model = all_args['model']

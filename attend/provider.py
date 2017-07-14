@@ -1,6 +1,8 @@
 import tensorflow as tf
 import numpy as np
 
+from attend.readers import *
+
 # def input_pipeline():
 #     with tf.name_scope('input'):
 
@@ -22,7 +24,7 @@ class Provider():
     ENCODE_LSTM_H = 'encode_lstm_h'
 
     def __init__(self, filenames, encoder, batch_size, num_hidden, time_steps, feat_name='conflict',
-            num_epochs=None, seq_q=True):
+            num_epochs=None, seq_q=True, debug=False):
         self.filenames   = filenames
         self.batch_size  = batch_size
         self.time_steps  = time_steps
@@ -36,6 +38,22 @@ class Provider():
         # Encoded dimension after flattening
         self.encoded_dim = self._deduce_encoded_dim()
         self.scope       = 'input'
+        self.debug = debug
+
+        if len(filenames) == 1 and filenames[0].endswith('hdf5'):
+            # self.input_producer = generate_single_sequence_example_from_hdf5
+            reader = HDF5SequenceReader(filenames[0], feat_name)
+            self.dim_feature = reader.feature_shape
+            # TODO not using scope atm
+            self.input_producer = lambda filename, feat_name, scope, **kwargs: \
+                generate_single_sequence_example(reader, scope, **kwargs)
+
+        elif len(filenames) == 1 and filenames[0].endswith('tfrecords'):
+            self.input_producer = read_single_sequence_example_fom_tfrecord
+        else:
+            print(filenames)
+            raise Exception('Unknown file format, expecting just one file')
+
 
 
     # TODO seriously find a way to only build the convnet once this is ridiculous
@@ -45,17 +63,15 @@ class Provider():
         return dims
 
 
-    def input_producer(self):
-        with tf.name_scope(self.scope):
-            filename_q = tf.train.string_input_producer(
-                    self.filenames, num_epochs=self.num_epochs, shuffle=True)
-
-            example, target, context = self.read_and_decode_from_tfrecords(filename_q)
-            return example, target, context
-
-
     def batch_sequences_with_states(self):
-        example, target, context = self.input_producer()
+        example, target, context = self.input_producer(self.filenames[0], self.feat_name, self.scope)
+        # TODO
+        # This is just for debugging when source and target sequence don't match in len
+        if self.debug:
+            min_time_steps = tf.minimum(tf.shape(example)[0], tf.shape(target)[0])
+            example = example[:min_time_steps]
+            target = target[:min_time_steps]
+
         # TODO batch_sequences_with_states needs a shape, try to get rid of that?
         example.set_shape([None, np.prod(self.dim_feature)])
 
@@ -68,7 +84,7 @@ class Provider():
                     'lstm_c': tf.zeros([self.H], dtype=tf.float32),
                     'lstm_h': tf.zeros([self.H], dtype=tf.float32),
                     # Keep the previous batch around too for extra history
-                    # 'history': tf.zeros([self.batch_size, self.T, np.prod(self.encoded_dim)], dtype=tf.float32),
+                   # 'history': tf.zeros([self.batch_size, self.T, np.prod(self.encoded_dim)], dtype=tf.float32),
                     'first': tf.constant(True)
                 }
 
@@ -85,7 +101,7 @@ class Provider():
                         'images': example,
                         self.feat_name: target,
                     },
-                    input_key      = context['subject'],
+                    input_key      = context['key'],
                     input_context  = context,
                     input_length   = tf.cast(context['num_frames'], tf.int32),
                     initial_states = initial_states,
@@ -99,29 +115,7 @@ class Provider():
             self.features    = example_batch
             self.targets     = target_batch
             self.state_saver = batch
-
-
-    def read_and_decode_from_tfrecords(self, filename_q):
-        feat_name = self.feat_name
-        with tf.name_scope(self.scope):
-            reader = tf.TFRecordReader()
-            _, serialized_example = reader.read(filename_q)
-            # https://github.com/tensorflow/tensorflow/issues/976
-            # http://www.wildml.com/2016/08/rnns-in-tensorflow-a-practical-guide-and-undocumented-features/
-            context, feature_lists = tf.parse_single_sequence_example(
-                    serialized_example,
-                    context_features=dict(
-                        subject    = tf.FixedLenFeature([], dtype = tf.string),
-                        video      = tf.FixedLenFeature([], dtype = tf.string),
-                        num_frames = tf.FixedLenFeature([], dtype = tf.int64)
-                    ),
-                    sequence_features={
-                        'images'    : tf.FixedLenSequenceFeature([], dtype  = tf.string),
-                        feat_name : tf.FixedLenSequenceFeature([1], dtype = tf.float32)
-                    })
-
-            images = tf.decode_raw(feature_lists['images'], tf.float32)
-            context['subject'] = tf.Print(context['subject'], [context['subject'], context['num_frames']], message='video ')
-            # images = tf.Print(images, [tf.shape(images)], message='images shape ')
-
-            return images, feature_lists[feat_name], context
+            # This fixes an expectation of targets being single-dimensional further down the line
+            # So like [?, T, 1] instead of just [?, T]
+            if len(self.targets.shape) <= 2:
+                self.targets = tf.expand_dims(self.targets, -1)
