@@ -80,7 +80,9 @@ def generate_single_sequence_example(
         close_op = q.close(cancel_pending_enqueues=True)
         queue_runner = GeneratorRunner(reader, placeholders, enqueue_op, close_op)
 
-        tf.train.add_queue_runner(queue_runner)
+        # Keep in a separate collection so it can be started manually
+        # ... because the supervisor keeps tripping up
+        tf.train.add_queue_runner(queue_runner, collection='input_runners')
 
         if summary_name:
             tf.summary.scalar(summary_name,

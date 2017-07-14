@@ -60,9 +60,10 @@ class AttendSolver():
         summary_op = tf.summary.merge_all()
 
         # The Supervisor saves summaries after X seconds, not good for model progressions
-        # sv = tf.train.Supervisor(logdir=log_dir, summary_op=summary_op,
-                # save_summaries_secs=0)
-        coord = tf.train.Coordinator()
+        sv = tf.train.Supervisor(logdir=log_dir, summary_op=summary_op,
+                save_summaries_secs=0)
+        coord = sv.coord
+        # coord = tf.train.Coordinator()
         if debug:
             config = tf.ConfigProto(
                 intra_op_parallelism_threads=1
@@ -73,17 +74,21 @@ class AttendSolver():
         # Managed session will do the necessary init_ops, start queue runners,
         # start checkpointing/summary service
         # It will also recover from a checkpoint if available
-        # with sv.managed_session(config=config) as sess:
-        with tf.Session() as sess:
-            sess.run(init_op)
+        with sv.managed_session(config=config) as sess:
+        # with tf.Session() as sess:
+            # sess.run(init_op)
+            # Special input runners run separately because the supervisor can't
+            # serialize them
+            input_threads = tf.train.start_queue_runners(sess=sess, coord=coord,
+                    collection='input_runners')
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
             summary_writer = tf.summary.FileWriter(log_dir)
 
             t_start = time()
 
             try:
-                # while not sv.should_stop():
-                while not coord.should_stop():
+                while not sv.should_stop():
+                # while not coord.should_stop():
                     loss, _ = sess.run([loss_op, train_op])
                     global_step_value = tf.train.global_step(sess, global_step)
                     summary = sess.run(summary_op)
@@ -99,8 +104,8 @@ class AttendSolver():
             finally:
                 # Requests the coordinator to stop, joins threads
                 # and closes the summary writer if enabled through supervisor
-                # sv.stop()
-                coord.join(threads)
-                coord.stop()
+                coord.join(threads + input_threads)
+                sv.stop()
+                # coord.stop()
 
             sess.close()
