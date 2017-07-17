@@ -27,6 +27,7 @@ setup(
         'console_scripts': [
             'confer-to-images = attend.pre.confer_to_images:main',
             'images-to-features = attend.pre.images_to_features:main',
+            'mean-pixel = attend.pre.mean_pixel:main',
             ]
         }
 )
