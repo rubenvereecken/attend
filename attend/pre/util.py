@@ -1,4 +1,5 @@
 import os
+import numpy as np
 
 def find_deepest_dirs(path='.'):
     for dir, subdirs, files in os.walk(path):
@@ -28,6 +29,30 @@ def makedirs_if_needed(file_or_dir):
 def rm_if_needed(file):
     if os.path.exists(file):
         os.remove(file)
+
+
+# https://github.com/albanie/pts_loader
+def load_pts(path):
+    """takes as input the path to a .pts and returns a list of
+	tuples of floats containing the points in in the form:
+	[(x_0, y_0, z_0),
+	 (x_1, y_1, z_1),
+	 ...
+	 (x_n, y_n, z_n)]"""
+    with open(path) as f:
+        rows = [rows.strip() for rows in f]
+
+    """Use the curly braces to find the start and end of the point data"""
+    head = rows.index('{') + 1
+    tail = rows.index('}')
+
+    """Select the point data split into coordinates"""
+    raw_points = rows[head:tail]
+    coords_set = [point.split() for point in raw_points]
+
+    """Convert entries from lists of strings to tuples of floats"""
+    points = [tuple([float(point) for point in coords]) for coords in coords_set]
+    return np.array(points)
 
 
 class LengthyGenerator(dict):

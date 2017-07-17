@@ -66,7 +66,7 @@ def process_vids(
     return video_gen
 
 
-def save_to_hdf5(vid_gen, out, n_vids):
+def save_to_hdf5(vid_gen, out):
     with h5py.File(out) as out:
         features = out.require_group('features')
 
@@ -109,7 +109,7 @@ def main():
             debug=args.debug, batch_size=args.batch_size)
 
     # Write out the batches of features
-    writers[out_ext](vids, args.out, len(vid_dirs))
+    writers[out_ext](vids, args.out)
 
 
 if __name__ == '__main__':

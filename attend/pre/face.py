@@ -1,14 +1,16 @@
 import h5py
 import numpy as np
 import cv2
+import os
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
 
 class DATA:
     _mean_shape = None
 
     @classmethod
     def load(cls):
-        cls._mean_shape = np.load('./mean_face.npy')
+        cls._mean_shape = np.load(dir_path + '/mean_face.npy')
 
     @classmethod
     def mean_shape(cls):
@@ -25,7 +27,7 @@ def warp_to_mean_shape(img, pts, mean_shape=None):
     M = cv2.estimateRigidTransform(pts_rescaled, mean_shape, True)
     shape_2d = lambda x:tuple(reversed(list(x.shape[:2])))
     # shape_2d(img)
-    img_transformed = cv2.warpAffine(img, M, (224,224))
+    img_transformed = cv2.warpAffine(img, M, shape_2d(img))
     pts_transformed = np.matmul(M[:2,:2], pts.T).T + M[:,2]
 
     return img_transformed, pts_transformed
@@ -46,6 +48,8 @@ def extract_face(img, pts, face_ratio=.8):
     bbox_padded = pad_box(bbox, padding)
     # At this point the bounding box is ready to be applied to the image for a proper cropping
     bbox_padded = np.round(bbox_padded).astype(np.int64) # Dunno if needed
+    # padded_lengths = box_lengths(bbox_padded)
+    # assert padded_lengths[0] == padded_lengths[1]
     img_cropped = crop_to(img, bbox_padded)
 
     return img_cropped
@@ -54,6 +58,7 @@ def extract_face(img, pts, face_ratio=.8):
 def preprocess_and_extract_face(img, pts):
     img_transformed, pts_transformed = warp_to_mean_shape(img, pts)
     img_cropped = extract_face(img_transformed, pts_transformed)
+    # assert img_cropped.shape[0] == img_cropped.shape[1], paint_and_save(img_cropped, pts_transformed)
     img_final = resize(img_cropped)
     return img_final
 
@@ -107,10 +112,30 @@ def pad_box(box, pad):
 
 def crop_to(img, box):
     # First take the y slice, then x slice
-    return img[box[0][1]:box[1][1], box[0][0]:box[1][0]]
+    min_x = box[0][1] if box[0][1] >= 0 else 0
+    min_y = box[0][0] if box[0][0] >= 0 else 0
+    max_x = box[1][1] if box[1][1] < img.shape[1] else img.shape[1] # switch right?
+    max_y = box[1][0] if box[1][0] < img.shape[0] else img.shape[0]
+    return img[min_x:max_x, min_y:max_y]
 
 
 def resize(img, res=224):
-    img = cv2.resize(img,None,fx=res/img.shape[0], fy=res/img.shape[1], interpolation = cv2.INTER_CUBIC)
-    assert img.shape[0] == res and img.shape[1] == res
-    return img
+    # Ehh x and y flipped again
+    resized = cv2.resize(img,None,fx=res/img.shape[1], fy=res/img.shape[0], interpolation = cv2.INTER_CUBIC)
+    if not (resized.shape[0] == res and resized.shape[1] == res):
+        print(img.shape)
+        print(resized.shape)
+        raise Exception('Resize failed')
+
+    return resized
+
+
+def paint_and_save(img, pts, filename='tmp.png'):
+    path = '/home/ruben/tmp'
+    import matplotlib.pyplot as plt
+    print(img.shape)
+
+    plt.imshow(img)
+    plt.scatter(pts[:,0], pts[:,1], marker='.')
+    plt.savefig(path + '/' + filename)
+

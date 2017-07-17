@@ -42,12 +42,19 @@ def process_vids(
         debug=False
         ):
 
+    from attend.pre import face, util
+
     def _do_frame(frame_file):
         img = imread(frame_file)
-        bbox, bbox_pts, pts = face.extract_bbox(img, mode='face_detect')
-        return bbox[0]
-
-    import faceKit as face
+        pts_file = frame_file.replace('.jpg', '.pts')
+        pts = util.load_pts(pts_file)
+        try:
+            bbox = face.preprocess_and_extract_face(img, pts)
+        except Exception as e:
+            print('Failed img {}'.format(frame_file))
+            print(e)
+            bbox = np.zeros((224,224,3))
+        return bbox
 
     for vid_dir in (vid_dirs):
         vid_name = _vid_name_from_dir(vid_dir)
