@@ -81,3 +81,14 @@ class LengthyGenerator(dict):
 
     def __next__(self):
         return next(self.generator)
+
+
+
+def float32_feature(value):
+    return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+def float32_featurelist(value):
+    return tf.train.FeatureList(feature=list(map(_float32_feature, value)))
+def int64_feature(value):
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+def bytes_feature(value):
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))

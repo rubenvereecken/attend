@@ -53,10 +53,11 @@ def process_vids(
         except Exception as e:
             print('Failed img {}'.format(frame_file))
             print(e)
+            raise e
             bbox = np.zeros((224,224,3))
         return bbox
 
-    for vid_dir in (vid_dirs):
+    for vid_dir in tqdm(vid_dirs):
         vid_name = _vid_name_from_dir(vid_dir)
         subject_name = vid_dir.split('/')[-1]
         frame_names = sorted(glob.glob(vid_dir + '/*jpg'))

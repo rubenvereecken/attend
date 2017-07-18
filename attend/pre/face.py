@@ -7,6 +7,11 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 
 class DATA:
     _mean_shape = None
+    facial_points = {   'inner' : np.arange(17,68),
+            'outer' : np.arange(0,27),
+            'stable': np.array([36,39,42,45,33]),
+            'Stable': np.array([19, 22, 25, 28, 10, 11, 12, 13, 14, 15, 16, 17, 18])+17,
+            'all'   : np.arange(68)}
 
     @classmethod
     def load(cls):
@@ -18,27 +23,45 @@ class DATA:
             cls.load()
         return cls._mean_shape
 
+    @classmethod
+    def facial_points_idxs(cls, key='stable'):
+        return cls.facial_points.get(key)
 
-def warp_to_mean_shape(img, pts, mean_shape=None):
+
+def warp_to_mean_shape(pts, img=None, idxs=None, mean_shape=None):
+    if idxs is None:
+        idxs = DATA.facial_points_idxs()
     if mean_shape is None:
         mean_shape = DATA.mean_shape()
 
+    # TODO there is this weird issue that using less facial points
+    # results in a transformation making the face way smaller
+
+    # Only use a few points to warp face with, not all of them
+    # pts = pts[idxs]
+    mean_shape = mean_shape[idxs]
+
     pts_rescaled = rescale(pts).astype(np.float32)
+    pts_rescaled = pts_rescaled[idxs]
+    # pts = pts[idxs]
     M = cv2.estimateRigidTransform(pts_rescaled, mean_shape, True)
     shape_2d = lambda x:tuple(reversed(list(x.shape[:2])))
-    # shape_2d(img)
-    img_transformed = cv2.warpAffine(img, M, shape_2d(img))
+    if not img is None:
+        img_transformed = cv2.warpAffine(img, M, shape_2d(img))
     pts_transformed = np.matmul(M[:2,:2], pts.T).T + M[:,2]
 
-    return img_transformed, pts_transformed
+    if img is None:
+        return pts_transformed
+    else:
+        return pts_transformed, img_transformed
 
 
 def extract_face(img, pts, face_ratio=.8):
     """ Extract a square image containing the face, covering `face_ratio` """
-    bbox = bounding_box(pts)
+    bbox = bounding_box(pts, True)
     bbox = pad_to_rectangle(bbox)
     bbox_lengths = box_lengths(bbox)
-    assert bbox_lengths[0] == bbox_lengths[1]
+    assert bbox_lengths[0] == bbox_lengths[1], '{} != {}'.format(bbox_lengths[0], bbox_lengths[1])
     bbox_size = np.apply_along_axis(np.diff, 0, bbox)[0,0]
     #face_scale = face_res / bbox_size
     #final_padding = final_res - face_res
@@ -56,16 +79,18 @@ def extract_face(img, pts, face_ratio=.8):
 
 
 def preprocess_and_extract_face(img, pts):
-    img_transformed, pts_transformed = warp_to_mean_shape(img, pts)
+    pts_transformed, img_transformed = warp_to_mean_shape(pts, img)
     img_cropped = extract_face(img_transformed, pts_transformed)
     # assert img_cropped.shape[0] == img_cropped.shape[1], paint_and_save(img_cropped, pts_transformed)
     img_final = resize(img_cropped)
     return img_final
 
 
-def bounding_box(pts):
-    bbox_min = np.ceil(np.array([np.min(pts[:,0]), np.min(pts[:,1])]))
-    bbox_max = np.floor(np.array([np.max(pts[:,0]), np.max(pts[:,1])]))
+def bounding_box(pts, round=False):
+    bbox_min = np.array(np.min(pts, axis=0))
+    bbox_max = np.array(np.max(pts, axis=0))
+    if round:
+        return np.array([np.ceil(bbox_min), np.floor(bbox_max)])
     return np.array([bbox_min, bbox_max])
 
 
@@ -139,3 +164,11 @@ def paint_and_save(img, pts, filename='tmp.png'):
     plt.scatter(pts[:,0], pts[:,1], marker='.')
     plt.savefig(path + '/' + filename)
 
+
+def mean_and_stdev_normalize(pts):
+    p = np.copy(pts)
+    p -= np.mean(p, axis=0)
+    # This is the stdec across x/y because I don't want to warp the image
+    r = np.std(p)
+    p = p / r
+    return p

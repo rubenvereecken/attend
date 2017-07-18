@@ -25,6 +25,8 @@ from attend.pre.models import *
 parser = argparse.ArgumentParser(description='Convert frame images to hf5 and preprocess')
 parser.add_argument('-i', '--in_dir', type=str, required=True,
                     help='input frames directory, containing subfolders')
+parser.add_argument('-a', '--annot_dir', type=str, required=True,
+        help='')
 parser.add_argument('-o', '--out', type=str, default='out/annotations.hdf5',
                     help='Output file or folder; format will be inferred')
 parser.add_argument('--debug', dest='debug', action='store_true')
@@ -34,6 +36,7 @@ parser.set_defaults(debug=False)
 
 def process_annot(
         vid_dirs,
+        annot_dir,
         out,
         debug=False
         ):
@@ -42,11 +45,17 @@ def process_annot(
         annotations = out.require_group('conflict')
 
         for vid_dir in tqdm(vid_dirs):
-            vid_name = vid_dir.split('/')[-1]
-            m = loadmat(vid_dir + '/meanAnnotation.mat')
-            annot = m['annotations'].reshape(-1)
+            # Video directory is vid_name/subject_name
+            # While annot directory is just vid_name/, same for both subjects
+            vid_name = vid_dir.split('/')[-2]
+            subject_name = vid_dir.split('/')[-1]
 
-            annotations.create_dataset(vid_name, data=annot, dtype=np.float32)
+            # Write annotations per subject name, even though duplicate
+            m = loadmat('{}/{}/meanAnnotation.mat'.format(annot_dir, vid_name))
+            annot = m['annotations'].reshape(-1)
+            annotations.create_dataset(subject_name, data=annot, dtype=np.float32)
+            if vid_name not in annotations:
+                annotations.create_dataset(vid_name, data=annot, dtype=np.float32)
 
 
 def main():
@@ -66,10 +75,13 @@ def main():
 
     vid_dirs = list(util.find_deepest_dirs(args.in_dir))
     assert len(vid_dirs) != 0, 'Could not find any vids'
-    print('Found {} directories'.format(len(vid_dirs)))
 
-    process_annot(vid_dirs, args.out, debug=args.debug)
+    annot_dirs = list(util.find_deepest_dirs(args.annot_dir))
+    assert len(annot_dirs) != 0
+
+    process_annot(vid_dirs, args.annot_dir, args.out, debug=args.debug)
 
 if __name__ == '__main__':
     main()
+
 
