@@ -5,7 +5,8 @@ import numpy as np
 class Encoder():
     ALLOWED_CONV_IMPLS = ['small', 'convnet', 'resnet', 'vggface', 'none']
 
-    def __init__(self, batch_size, encode_hidden_units=0, time_steps=None, debug=True, conv_impl=None):
+    def __init__(self, batch_size, encode_hidden_units=0, time_steps=None,
+                 debug=True, conv_impl=None, dense_layer=0):
         self.debug = debug
         self.encode_lstm = encode_hidden_units > 0
         self.batch_size = batch_size # TODO this will go
@@ -22,16 +23,22 @@ class Encoder():
 
         if encode_hidden_units: assert not time_steps is None, 'need time steps for encode lstm'
         self.encode_hidden_units = encode_hidden_units
+        self.dense_layer         = dense_layer
         self.time_steps          = time_steps
         self.T                   = time_steps
 
         # Maybe look into this one
-        self.weight_initializer = tf.random_normal
+        # self.weight_initializer = tf.random_normal
+        self.weight_initializer = tf.contrib.layers.xavier_initializer()
+        self.const_initializer = tf.constant_initializer(0.0)
 
 
     def __call__(self, x, state_saver=None):
         with tf.variable_scope('encoder'):
             x = self.conv_network(x)
+            if self.dense_layer:
+                print('Using a dense layer in the encoder')
+                x = self.dense(x)
             if self.encode_hidden_units > 0:
                 x = self._encode_lstm(x, state_saver)
             return x
@@ -46,8 +53,20 @@ class Encoder():
             with g.as_default():
                 x = tf.placeholder(dtype=tf.float32, shape=[None, None, *input_dims])
                 conv_out = self(x)
-                print(conv_out.shape)
+                print('conv out', conv_out.shape)
                 return conv_out.shape.as_list()[1:]
+
+    def dense(self, x):
+        # Expect flattened
+        x.shape.assert_has_rank(3)
+        D = x.shape[2]
+
+        with tf.variable_scope('encode_dense'):
+            W = tf.get_variable('W', [D, D], initializer=self.weight_initializer)
+            b = tf.get_variable('b', [D], initializer=self.const_initializer)
+            x = tf.einsum('ijk,kl->ijl', x, W) + b
+
+        return x
 
 
     def _conv2d(self, x, W, b, stride):

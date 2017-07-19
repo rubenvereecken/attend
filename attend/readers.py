@@ -5,11 +5,12 @@ import tensorflow as tf
 class GeneratorRunner:
     "Custom runner that that runs an generator in a thread and enqueues the outputs."
 
-    def __init__(self, generator, placeholders, enqueue_op, close_op):
+    def __init__(self, generator, placeholders, enqueue_op, close_op, name=None):
         self._generator = generator
         self._placeholders = placeholders
         self._enqueue_op = enqueue_op
         self._close_op = close_op
+        self.name = name if name else 'provider'
 
     def _run(self, sess, coord):
         try:
@@ -22,18 +23,23 @@ class GeneratorRunner:
 
                     feed_dict = {placeholder: value \
                         for placeholder, value in zip(self._placeholders, values)}
+                    print('Running enqueue')
                     sess.run(self._enqueue_op, feed_dict=feed_dict)
                 except (StopIteration, tf.errors.OutOfRangeError):
                     try:
-                        sess.run(self._close_op)
+                        print('Closing')
+                        # sess.run(self._close_op)
+                        print('Closed queue runner')
                     except Exception:
                         pass
                     return
         except Exception as ex:
+            print('Something occurred in the generator runner')
             if coord:
                 coord.request_stop(ex)
             else:
                 raise
+
 
     def create_threads(self, sess, coord=None, daemon=False, start=False):
         "Called by `start_queue_runners`."
@@ -52,6 +58,7 @@ class GeneratorRunner:
             thread.start()
 
         return [thread]
+
 
 def generate_single_sequence_example(
         reader,
@@ -142,19 +149,24 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
         # http://www.wildml.com/2016/08/rnns-in-tensorflow-a-practical-guide-and-undocumented-features/
         context, feature_lists = tf.parse_single_sequence_example(
                 serialized_example,
-                context_features=dict(
-                    subject    = tf.FixedLenFeature([], dtype = tf.string),
-                    video      = tf.FixedLenFeature([], dtype = tf.string),
-                    num_frames = tf.FixedLenFeature([], dtype = tf.int64)
-                ),
+                context_features={
+                    'key'              : tf.FixedLenFeature([], dtype = tf.string),
+                    # 'video'          : tf.FixedLenFeature([], dtype = tf.string),
+                    # TODO just get it from shape
+                    # 'features.shape' : tf.FixedLenFeature([], dtype = tf.int64)
+                    'num_frames': tf.FixedLenFeature([], dtype=tf.int64)
+                },
                 sequence_features={
-                    'images'    : tf.FixedLenSequenceFeature([], dtype  = tf.string),
-                    feat_name : tf.FixedLenSequenceFeature([1], dtype = tf.float32)
+                    # 'features' : tf.FixedLenSequenceFeature([], dtype  = tf.string),
+                    'features': tf.FixedLenSequenceFeature([], dtype=tf.float32),
+                    feat_name  : tf.FixedLenSequenceFeature([1], dtype = tf.float32)
                 })
 
-        images = tf.decode_raw(feature_lists['images'], tf.float32)
-        context['key'] = context['subject']
+        # images = tf.decode_raw(feature_lists['features'], tf.float32)
+        images = feature_lists['features']
+        # context['num_frames'] = context['features.shape'][0]
         context['key'] = tf.Print(context['key'], [context['key'], context['num_frames']], message='video ')
+        # context['key'] = tf.Print(context['key'], [tf.shape(images)])
         # images = tf.Print(images, [tf.shape(images)], message='images shape ')
 
         return images, feature_lists[feat_name], context
@@ -163,8 +175,30 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
 def read_single_sequence_example_fom_tfrecord(filename, feat_name, scope, **kwargs):
     with tf.name_scope(scope):
         filename_q = tf.train.string_input_producer(
-                [filename], num_epochs=kwargs.get('num_epochs', None), shuffle=True)
+                [filename], num_epochs=kwargs.get('num_epochs', None))
+        # filename_q.dequeue = tf.Print(filename_q.dequeue, [filename_q.dequeue], message='file deq')
 
         example, target, context = read_and_decode_from_tfrecords(filename_q, feat_name, scope)
         # print((example.shape, target.shape, context['subject']))
         return example, target, context
+
+
+def read_shape_from_tfrecords_for(filename, key='features'):
+    """
+    Reads the first sequence example's context to get features shape
+    Assume it has a context value 'features.shape' that is an int list
+    """
+    import time
+    start = time.time()
+    from google.protobuf.json_format import MessageToJson
+    import simplejson as json
+
+    raw_example = next(tf.python_io.tf_record_iterator(filename))
+    # Don't read a sequence example, this will just read the context
+    context = tf.train.Example.FromString(raw_example)
+    context = json.loads(MessageToJson(context))
+    raw_shape = context['features']['feature']['{}.shape'.format(key)]['int64List']['value']
+    shape = tuple(map(int, raw_shape))
+    print('Took {:.2f}s to infer {} shape'.format(time.time()-start, key))
+    return shape
+

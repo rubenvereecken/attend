@@ -69,7 +69,7 @@ def process(
                     feature = _float32_featurelist(arr)
                 else:
                     raise Exception('{} not supported'.format(dset.dtype))
-                print('{} | {} | final {}'.format(group_name, dset.shape, arr.shape))
+                # print('{} | {} | final {}'.format(group_name, dset.shape, arr.shape))
 
                 features[group_name] = feature
                 # TODO tuple like context feature

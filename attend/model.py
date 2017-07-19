@@ -1,9 +1,14 @@
 import numpy as np
 import tensorflow as tf
 
+from attend.log import Log; log = Log.get_logger(__name__)
+
 
 class AttendModel():
-    def __init__(self, provider, encoder, num_hidden=512, loss_fun='mse', time_steps=None, debug=True):
+    # ALLOWED_ATTN_IMPLS = ['attention']
+
+
+    def __init__(self, provider, encoder, num_hidden=512, loss_fun='mse', time_steps=None, attention_impl=None, debug=True):
         """
 
         Arguments:
@@ -18,6 +23,7 @@ class AttendModel():
         # self.dim_feature = provider.dim_feature
         # self.dim_feature = [224, 224, 3]
         self.dim_feature = provider.dim_feature
+        self.D = np.prod(self.dim_feature) # Feature dimension when flattened
         self.H = num_hidden
 
         # If None, it's variable, if an int, it's known. Can also be Tensor
@@ -34,7 +40,42 @@ class AttendModel():
         else:
             raise Exception()
 
+        self.attention_impl = attention_impl
+        if attention_impl == 'time_naive':
+            self.attention_layer = self._attention_layer
+        elif attention_impl is None or attention_impl == 'none':
+            self.attention_layer = None
+        else:
+            raise Exception('Invalid attention impl {}'.format(attention_impl))
+
         self.debug = debug
+
+
+    def _attention_layer(self, x, h, reuse=False):
+        """
+        h: decoder hidden state from previous step
+        """
+        # Require features to be flat at this point
+        x.shape.assert_has_rank(3)
+
+        with tf.variable_scope('project_features', reuse=reuse):
+            W = tf.get_variable('W', [self.D, self.D], initializer=self.weight_initializer)
+            b = tf.get_variable('b', [self.D], initializer=self.const_initializer)
+            feat_proj = tf.einsum('ijk,kl->ijl', x, W) + b
+
+        with tf.variable_scope('attention_layer', reuse=reuse):
+            # TODO dropout on attention hidden weights
+            W = tf.get_variable('W', [self.H, self.D], initializer=self.weight_initializer)
+            b = tf.get_variable('b', [self.D], initializer=self.const_initializer)
+            h_att = tf.nn.relu(feat_proj + tf.expand_dims(tf.matmul(h, W), 1) + b, name='h_att')
+
+            w_att = tf.get_variable('w_att', [self.D, 1], initializer=self.weight_initializer)
+            out_att = tf.einsum('ijk,kl->ij', h_att, w_att)
+            # Softmax assigns probability to each frame
+            alpha = tf.nn.softmax(out_att, name='alpha')
+            context = tf.reduce_sum(x * tf.expand_dims(alpha, 2), 1, name='context')
+
+            return context, alpha
 
 
     # TODO split this up in predict and loss or something
@@ -50,6 +91,13 @@ class AttendModel():
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
 
+        # TODO remove
+        W = tf.get_variable('W_tmp', [68*2*2, 1])
+        outputs = tf.einsum('ijk,kl->ijl', features, W)
+        loss = self.loss_fun(targets, outputs)
+        loss = tf.Print(loss, [loss], message='loss ')
+        return loss
+
         T = self.T if not self.T is None else tf.shape(targets[1])
 
         # Consider batch normalizing features instead of mean subtract
@@ -62,6 +110,9 @@ class AttendModel():
                 x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
 
         x = self.encoder(x, state_saver)
+        log.debug('encoded shape', x.shape)
+
+        # TODO consider projecting features x
 
         # c, h = self._initial_lstm(x)
         c = state_saver.state('lstm_c')
@@ -75,22 +126,23 @@ class AttendModel():
 
         with tf.variable_scope('decoder'):
             for t in range(T):
-                # TODO this will become attention
-                context = x[:,t,:]
-
                 if t == 0:
                     # Fill with null values first go because there is no previous
                     # Assumes target dim of 1 per time step
                     true_prev_target = tf.zeros([batch_size, 1])
                 else:
                     # Feed back in last true input
-                    # print(targets.shape)
                     true_prev_target = targets[:, t]
+
+                if self.attention_layer:
+                    context, alpha = self.attention_layer(x, h)
+                    decoder_lstm_input = tf.concat([true_prev_target, context], 1)
+                else:
+                    decoder_lstm_input = tf.concat([true_prev_target, x[:,t,:]], 1)
 
                 # TODO bring scope outside?
                 with tf.name_scope('lstm'):
-                    _, (c, h) = lstm_cell(inputs=tf.concat([true_prev_target, context], 1),
-                            state=[c, h])
+                    _, (c, h) = lstm_cell(inputs=decoder_lstm_input, state=[c, h])
 
                 with tf.name_scope('decode_lstm'):
                     output = self._decode(c, dropout=True, reuse=(t!=0))
@@ -148,87 +200,3 @@ class AttendModel():
             b_c = tf.get_variable('b_c', [self.H], initializer=self.const_initializer)
             c = tf.nn.tanh(tf.matmul(features_mean, w_c) + b_c)
         return c, h
-
-
-
-
-
-
-
-
-# def linear_reg(nb_outputs, dropout=.5, norm=True, sizes=[512, 512]):
-
-#     # Fit the Keras way of doing thangs
-#     def _network(net):
-#         for size in sizes: net = K.layers.Dense(size)(net)
-#             net = K.layers.BatchNormalization(axis=-1)(net)
-#             net = K.layers.Dropout(dropout)(net)
-
-#         net = K.layers.Dense(nb_outputs, activation='softmax')(net)
-#         return net
-
-#     return _network
-
-
-# def _target_path_for(target):
-#     return '/{}/V/aligned'.format(target)
-
-
-# def setup_model(
-#         target,
-#         data_file,
-#         batch_size,
-#         steps_per_epoch,
-#         epochs,
-#         log_dir
-#         ):
-#     # Define the datasets
-#     # Select the features and a single target
-#     sources = ['img', _target_path_for(target)]
-#     tr_set = H5PYDataset(data_file, which_sets=('train',), sources=sources)
-#     te_set = H5PYDataset(data_file, which_sets=('test',), sources=sources)
-
-#     # I feel like this can be done better
-#     tr_scheme = InfSeqBatchIterator(examples=tr_set.num_examples,
-#             batch_size=batch_size)
-#     te_scheme = InfSeqBatchIterator(examples=te_set.num_examples,
-#             batch_size=batch_size)
-
-#     tr_stream = DataStream(dataset=tr_set, iteration_scheme=tr_scheme)
-#     te_stream = DataStream(dataset=te_set, iteration_scheme=te_scheme)
-
-#     # input_layer = K.layers.Input(tr_set.source_shapes[0].shape[1:])
-#     base_model = apps.ResNet50(weights = 'imagenet')
-#     input_layer = base_model.input
-#     last_layer = base_model.get_layer('flatten_1').output
-#     pred = linear_reg(1)(last_layer)
-
-#     model = K.models.Model([input_layer], pred)
-
-#     model.compile(
-#             optimizer = K.optimizers.Adadelta(
-#                 lr = 1.,
-#                 rho = .95,
-#                 epsilon = 1e-8,
-#                 decay = 5e-5,
-#                 ),
-#             loss = K.losses.mean_squared_error
-#             )
-
-#     model.fit_generator(
-#             generator=tr_stream.get_epoch_iterator(),
-#             steps_per_epoch=steps_per_epoch,
-#             epochs=epochs,
-#             max_q_size=10,
-#             # nb_val_samples=100,
-#             validation_data=te_stream.get_epoch_iterator(),
-#             validation_steps=100,
-#             callbacks=[
-#                 # K.callbacks.TensorBoard(log_dir=log_dir),
-#                 TensorBoard(log_dir=log_dir),
-#                 K.callbacks.CSVLogger(filename=log_dir + '/logger.csv'),
-#                 K.callbacks.ModelCheckpoint(log_dir + '/model.h5'),
-#                 ]
-#             )
-
-#     return model

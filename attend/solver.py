@@ -3,6 +3,7 @@ import numpy as np
 from time import time
 
 from util import *
+from attend.log import Log; log = Log.get_logger(__name__)
 
 class AttendSolver():
     def __init__(self, model, update_rule, learning_rate):
@@ -17,7 +18,7 @@ class AttendSolver():
             raise Exception()
 
 
-    def train(self, num_epochs, batch_size, time_steps,
+    def train(self, num_epochs, steps_per_epoch, batch_size, time_steps,
               provider, # TODO not really used?
               encoder,
               log_dir,
@@ -60,13 +61,13 @@ class AttendSolver():
         summary_op = tf.summary.merge_all()
 
         # The Supervisor saves summaries after X seconds, not good for model progressions
-        sv = tf.train.Supervisor(logdir=log_dir, summary_op=summary_op,
-                save_summaries_secs=0)
-        coord = sv.coord
-        # coord = tf.train.Coordinator()
+        # sv = tf.train.Supervisor(logdir=log_dir, summary_op=summary_op,
+        #         save_summaries_secs=0)
+        # coord = sv.coord
+        coord = tf.train.Coordinator()
         if debug:
             config = tf.ConfigProto(
-                intra_op_parallelism_threads=1
+                # intra_op_parallelism_threads=1
             )
         else:
             config = tf.ConfigProto()
@@ -74,38 +75,50 @@ class AttendSolver():
         # Managed session will do the necessary init_ops, start queue runners,
         # start checkpointing/summary service
         # It will also recover from a checkpoint if available
-        with sv.managed_session(config=config) as sess:
-        # with tf.Session() as sess:
-            # sess.run(init_op)
+        # with sv.managed_session(config=config) as sess:
+        with tf.Session() as sess:
+            sess.run(init_op)
             # Special input runners run separately because the supervisor can't
             # serialize them
-            input_threads = tf.train.start_queue_runners(sess=sess, coord=coord,
-                    collection='input_runners')
+            # input_threads = tf.train.start_queue_runners(sess=sess, coord=coord,
+            #         collection='input_runners')
+            input_threads = []
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-            summary_writer = tf.summary.FileWriter(log_dir)
+            summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
 
             t_start = time()
+            log.debug('Started')
 
             try:
-                while not sv.should_stop():
-                # while not coord.should_stop():
+                # while not sv.should_stop():
+                while not coord.should_stop():
                     loss, _ = sess.run([loss_op, train_op])
                     global_step_value = tf.train.global_step(sess, global_step)
+                    log.debug('Loss for {}: {}'.format(global_step_value, loss))
                     summary = sess.run(summary_op)
                     summary_writer.add_summary(summary, global_step_value)
-                    import pdb; pdb.set_trace()
+                    # import pdb; pdb.set_trace()
                     # Run training steps or whatever
+                    if global_step_value % steps_per_epoch == 0:
+                        # TODO do some post epoch stuff
+                        pass
+                    if global_step_value == steps_per_epoch * num_epochs:
+                        # TODO you done
+                        # sv.request_stop()
+                        log.debug('Completed final step')
+                        coord.request_stop()
             except tf.errors.OutOfRangeError:
-                print('Done training -- epoch limit reached')
+                log.info('Done training -- epoch limit reached')
                 notify('Done training', 'Took {:.1f}s'.format(time() - t_start))
             except Exception as e:
-                print(e)
+                log.critical(e)
                 notify('Error occurred', 'Took {:.1f}s'.format(time() - t_start))
             finally:
+                log.debug('Finally - ...')
                 # Requests the coordinator to stop, joins threads
                 # and closes the summary writer if enabled through supervisor
                 coord.join(threads + input_threads)
-                sv.stop()
-                # coord.stop()
+                # sv.stop()
+                coord.stop()
 
             sess.close()

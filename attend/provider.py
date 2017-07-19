@@ -49,6 +49,9 @@ class Provider():
                 generate_single_sequence_example(reader, scope, **kwargs)
 
         elif len(filenames) == 1 and filenames[0].endswith('tfrecords'):
+            seq_shape = read_shape_from_tfrecords_for(filenames[0])
+            # TODO just flatten it for now, might want shape back later
+            self.dim_feature = (np.prod(seq_shape[1:]),)
             self.input_producer = read_single_sequence_example_fom_tfrecord
         else:
             print(filenames)
@@ -65,15 +68,20 @@ class Provider():
 
     def batch_sequences_with_states(self):
         example, target, context = self.input_producer(self.filenames[0], self.feat_name, self.scope)
+        # TODO batch_sequences_with_states needs a shape, try to get rid of that?
+        # example.set_shape([None, np.prod(self.dim_feature)])
+
+        # If mismatch, it probably needs a reshape
+        if len(self.dim_feature) + 1 != example.shape.ndims:
+            example = tf.reshape(example, [-1, *self.dim_feature])
+        example.shape.merge_with([None, *self.dim_feature])
+
         # TODO
         # This is just for debugging when source and target sequence don't match in len
-        if self.debug:
-            min_time_steps = tf.minimum(tf.shape(example)[0], tf.shape(target)[0])
-            example = example[:min_time_steps]
-            target = target[:min_time_steps]
-
-        # TODO batch_sequences_with_states needs a shape, try to get rid of that?
-        example.set_shape([None, np.prod(self.dim_feature)])
+        # if self.debug:
+        #     min_time_steps = tf.minimum(tf.shape(example)[0], tf.shape(target)[0])
+        #     example = example[:min_time_steps]
+        #     target = target[:min_time_steps]
 
         with tf.name_scope(self.scope):
             # TODO this should really be like _initial_lstm in model.py

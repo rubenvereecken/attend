@@ -8,6 +8,7 @@ class Defaults:
     num_hidden      = 512
     conv_impl       = 'none'
     encode_hidden_units = 512
+    dense_layer     = 1
 
     update_rule     = 'adam'
 

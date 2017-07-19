@@ -8,7 +8,6 @@ import time
 import simplejson as json
 
 from attend.defaults import Defaults
-from attend.solver import AttendSolver
 from attend.util import *
 
 
@@ -49,6 +48,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int)
     parser.add_argument('--encode_hidden_units', type=int)
     parser.add_argument('--conv_impl', type=str)
+    parser.add_argument('--attention_impl', type=str)
 
     parser.set_defaults(
             gen_log_dir=True, debug=False,
@@ -64,16 +64,21 @@ if __name__ == '__main__':
 
     _save_arguments(args, args.log_dir)
 
+    from attend.log import Log
+    Log.setup(args.log_dir + '/log.txt', args.debug)
+    log = Log.get_logger(__name__)
+
     # model = setup_model(**pick(args.__dict__, list(inspect.signature(setup_model).parameters)))
     # solver = SEWASolver(None)
     all_args = args.__dict__.copy()
 
     if not all_args['debug']:
-        print('NOT running in debug mode!')
+        log.info('NOT running in debug mode!')
     # Easy bool to pass around
     all_args['encode_lstm'] = all_args['encode_hidden_units'] > 0
 
     import inspect
+    from attend.solver import AttendSolver
     from attend.model import AttendModel
     from attend.provider import Provider
     from attend.encoder import Encoder
