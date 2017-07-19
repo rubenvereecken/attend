@@ -117,7 +117,7 @@ class AttendModel():
         if not state_saver is None:
             c = state_saver.state('lstm_c')
             h = state_saver.state('lstm_h')
-            # history = state_saver.state('history')
+            history = state_saver.state('history')
         else:
             c, h = self._initial_lstm(x)
 
@@ -137,6 +137,10 @@ class AttendModel():
                     true_prev_target = targets[:, t]
 
                 if self.attention_layer:
+                    # for t = 0, use current and t-1 from history
+                    # for t = T-1, use all of current frame and none from history
+                    past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], name='window')
+                    log.debug('Enabling attention with a %s step window', T)
                     context, alpha = self.attention_layer(x, h)
                     decoder_lstm_input = tf.concat([true_prev_target, context], 1)
                 else:
@@ -154,10 +158,15 @@ class AttendModel():
 
         # Saves LSTM state so decoding can continue like normal in a next call
         if not state_saver is None:
-            save_state = tf.group(
-                    state_saver.save_state('lstm_c', c, 'save_state'),
-                    state_saver.save_state('lstm_h', h, 'save_state')
-            )
+            save_state_scope = 'save_state'
+            with tf.variable_scope(save_state_scope):
+                save_state = tf.group(
+                    state_saver.save_state('lstm_c', c, save_state_scope + '_c'),
+                    state_saver.save_state('lstm_h', h, save_state_scope + '_h'),
+                    state_saver.save_state('first',
+                        tf.zeros([batch_size], dtype=tf.bool), save_state_scope + '_first'),
+                    state_saver.save_state('history', x, save_state_scope + '_history')
+                )
             control_deps.append(save_state)
 
         # Makes it easier by just injecting the save state control op

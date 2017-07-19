@@ -160,7 +160,8 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
                     # 'features' : tf.FixedLenSequenceFeature([], dtype  = tf.string),
                     'features': tf.FixedLenSequenceFeature([], dtype=tf.float32),
                     feat_name  : tf.FixedLenSequenceFeature([1], dtype = tf.float32)
-                })
+                },
+                name='read_tfrecords')
 
         # images = tf.decode_raw(feature_lists['features'], tf.float32)
         images = feature_lists['features']

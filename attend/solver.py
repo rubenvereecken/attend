@@ -43,7 +43,7 @@ class AttendSolver():
             #     print(v)
             #     print(v.shape)
             num_vars = np.sum(list(map(lambda v: np.prod(v.shape), tf.trainable_variables())))
-            print('Total trainable vars {}'.format(num_vars))
+            log.info('Total trainable vars {}'.format(num_vars))
 
         # Initialize variables
         # The Supervisor actually runs this automatically, but I'm keeping this

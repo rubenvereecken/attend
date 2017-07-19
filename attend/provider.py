@@ -125,8 +125,8 @@ class Provider():
                     'lstm_c': tf.zeros([self.H], dtype=tf.float32),
                     'lstm_h': tf.zeros([self.H], dtype=tf.float32),
                     # Keep the previous batch around too for extra history
-                   # 'history': tf.zeros([self.batch_size, self.T, np.prod(self.encoded_dim)], dtype=tf.float32),
-                    # 'first': tf.constant(True)
+                    'history': tf.zeros([self.T, np.prod(self.dim_feature)], dtype=tf.float32),
+                    'first': tf.constant(True)
                 }
 
             if self.encoder.encode_lstm:
@@ -150,7 +150,8 @@ class Provider():
                     num_unroll     = self.time_steps,
                     batch_size     = self.batch_size,
                     num_threads    = 1, # TODO change
-                    capacity       = self.batch_size
+                    capacity       = self.batch_size,
+                    name           = 'batch_seq_with_states'
                     )
             example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]
 
