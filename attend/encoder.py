@@ -55,7 +55,7 @@ class Encoder():
                 x = tf.placeholder(dtype=tf.float32, shape=[None, None, *input_dims])
                 conv_out = self(x)
                 log.debug('Encoder output shape %s', conv_out.shape)
-                return conv_out.shape.as_list()[1:]
+                return conv_out.shape.as_list()[2:]
 
     def dense(self, x):
         # Expect flattened
