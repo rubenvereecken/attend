@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 
 from attend.readers import *
+from attend.log import Log; log = Log.get_logger(__name__)
 
 # def input_pipeline():
 #     with tf.name_scope('input'):
@@ -36,8 +37,8 @@ class Provider():
         self.dim_feature = [224, 224, 3]
         self.encoder     = encoder
         # Encoded dimension after flattening
-        self.encoded_dim = self._deduce_encoded_dim()
         self.scope       = 'input'
+        self.state_saver = None
         self.debug = debug
 
         if len(filenames) == 1 and filenames[0].endswith('hdf5'):
@@ -52,11 +53,13 @@ class Provider():
             seq_shape = read_shape_from_tfrecords_for(filenames[0])
             # TODO just flatten it for now, might want shape back later
             self.dim_feature = (np.prod(seq_shape[1:]),)
+            log.warning('%s', self.dim_feature)
             self.input_producer = read_single_sequence_example_fom_tfrecord
         else:
             print(filenames)
             raise Exception('Unknown file format, expecting just one file')
 
+        self.encoded_dim = self._deduce_encoded_dim()
 
 
     # TODO seriously find a way to only build the convnet once this is ridiculous
@@ -64,6 +67,36 @@ class Provider():
         dims = self.encoder.encoded_dim(self.dim_feature)
         if type(dims) == list: dims = np.prod(dims)
         return dims
+
+
+    def batch_static_pad(self):
+        example, target, context = self.input_producer(self.filenames[0], self.feat_name, self.scope)
+
+        # TODO cheating
+        self.dim_feature = (np.prod(self.dim_feature),)
+        if len(self.dim_feature) + 1 != example.shape.ndims:
+            example = tf.reshape(example, [-1, *self.dim_feature])
+        example.shape.merge_with([None, *self.dim_feature])
+
+        log.debug('example shape %s', example.shape)
+        log.debug('target shape  %s', target.shape)
+
+        # padding = tf.constant(self.T) - tf.shape(example)[0]
+        padding = [[0,0],[0,0]]
+        padding[1][1] = tf.constant(self.T) - tf.shape(example)[0]
+        example = tf.pad(example, padding, 'CONSTANT')
+
+        example_batch, target_batch = tf.train.batch(
+            [example, target], batch_size=self.batch_size,
+            num_threads=1, # Change if actually using this
+            dynamic_pad=True,
+            capacity=8 # TODO look into these values
+            )
+
+        self.features    = example_batch
+        self.targets     = target_batch
+
+        return example_batch, target_batch
 
 
     def batch_sequences_with_states(self):
@@ -86,17 +119,18 @@ class Provider():
         with tf.name_scope(self.scope):
             # TODO this should really be like _initial_lstm in model.py
             # dim_conv = 14 * 14 * 512
-            import time
-            start = time.time()
+
+            # NOTE it's important every state below is saved, otherwise it blocks
             initial_states = {
                     'lstm_c': tf.zeros([self.H], dtype=tf.float32),
                     'lstm_h': tf.zeros([self.H], dtype=tf.float32),
                     # Keep the previous batch around too for extra history
                    # 'history': tf.zeros([self.batch_size, self.T, np.prod(self.encoded_dim)], dtype=tf.float32),
-                    'first': tf.constant(True)
+                    # 'first': tf.constant(True)
                 }
 
             if self.encoder.encode_lstm:
+                log.debug('Preparing encoder LSTM saved state')
                 initial_states.update({
                     Provider.ENCODE_LSTM_C: \
                             tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
@@ -115,8 +149,8 @@ class Provider():
                     initial_states = initial_states,
                     num_unroll     = self.time_steps,
                     batch_size     = self.batch_size,
-                    num_threads    = 2,
-                    capacity       = self.batch_size * 2 * 2
+                    num_threads    = 1, # TODO change
+                    capacity       = self.batch_size
                     )
             example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]
 

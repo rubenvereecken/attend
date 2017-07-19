@@ -26,6 +26,7 @@ class AttendSolver():
 
         # For now, its results are stored inside the provider
         provider.batch_sequences_with_states()
+        # provider.batch_static_pad()
 
         global_step = tf.Variable(0, trainable=False, name='global_step')
         loss_op = self.model.build_model(provider)
@@ -49,7 +50,6 @@ class AttendSolver():
         init_op = tf.group(tf.global_variables_initializer(),
                         tf.local_variables_initializer())
 
-        # TODO one of these silly summary ops makes the model run twice the first time
         # Summary op
         tf.summary.scalar('batch_loss', loss_op)
         for var in tf.trainable_variables():
@@ -92,12 +92,14 @@ class AttendSolver():
             try:
                 # while not sv.should_stop():
                 while not coord.should_stop():
-                    loss, _ = sess.run([loss_op, train_op])
+                    # Run batch_loss summary op together with loss_op
+                    # Otherwise it will recompute the loss separately
+                    loss, _, summary = sess.run([loss_op, train_op, summary_op])
                     global_step_value = tf.train.global_step(sess, global_step)
-                    log.debug('Loss for {}: {}'.format(global_step_value, loss))
-                    summary = sess.run(summary_op)
+
                     summary_writer.add_summary(summary, global_step_value)
                     # import pdb; pdb.set_trace()
+
                     # Run training steps or whatever
                     if global_step_value % steps_per_epoch == 0:
                         # TODO do some post epoch stuff

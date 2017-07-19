@@ -91,12 +91,12 @@ class AttendModel():
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
 
-        # TODO remove
-        W = tf.get_variable('W_tmp', [68*2*2, 1])
-        outputs = tf.einsum('ijk,kl->ijl', features, W)
-        loss = self.loss_fun(targets, outputs)
-        loss = tf.Print(loss, [loss], message='loss ')
-        return loss
+        # # TODO remove
+        # W = tf.get_variable('W_tmp', [np.prod(np.array(provider.dim_feature)), 1])
+        # outputs = tf.einsum('ijk,kl->ijl', features, W)
+        # loss = self.loss_fun(targets, outputs)
+        # loss = tf.Print(loss, [loss], message='loss ')
+        # return loss
 
         T = self.T if not self.T is None else tf.shape(targets[1])
 
@@ -110,14 +110,16 @@ class AttendModel():
                 x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
 
         x = self.encoder(x, state_saver)
-        log.debug('encoded shape', x.shape)
+        log.debug('encoded shape %s', x.shape)
 
         # TODO consider projecting features x
 
-        # c, h = self._initial_lstm(x)
-        c = state_saver.state('lstm_c')
-        h = state_saver.state('lstm_h')
-        # history = state_saver.state('history')
+        if not state_saver is None:
+            c = state_saver.state('lstm_c')
+            h = state_saver.state('lstm_h')
+            # history = state_saver.state('history')
+        else:
+            c, h = self._initial_lstm(x)
 
         # TODO that other implementation projects the features first
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
@@ -148,16 +150,19 @@ class AttendModel():
                     output = self._decode(c, dropout=True, reuse=(t!=0))
                     outputs.append(output)
 
+        control_deps = []
+
         # Saves LSTM state so decoding can continue like normal in a next call
-        with tf.name_scope('save_state'):
+        if not state_saver is None:
             save_state = tf.group(
-                    state_saver.save_state('lstm_c', c),
-                    state_saver.save_state('lstm_h', h)
+                    state_saver.save_state('lstm_c', c, 'save_state'),
+                    state_saver.save_state('lstm_h', h, 'save_state')
             )
-        # Makes it eaoutputssier by just injecting the save state control op
+            control_deps.append(save_state)
+
+        # Makes it easier by just injecting the save state control op
         # into the rest of the computation graph, but also makes it messy
-        # TODO execute it separately
-        with tf.control_dependencies([save_state]):
+        with tf.control_dependencies(control_deps):
             with tf.variable_scope('loss'):
                 outputs = tf.squeeze(tf.stack(outputs, axis=1)) # B x T
                 # TODO squeeze elsewhere man
@@ -166,8 +171,14 @@ class AttendModel():
                 # targets = tf.Print(targets, [tf.shape(targets)], message='targets shape ')
 
                 # Tails of sequences are likely padded, so create a mask to ignore padding
-                mask = tf.cast(tf.sequence_mask(state_saver.length, T), tf.int32)
-                loss = self.loss_fun(targets, outputs, weights=mask)
+                if not state_saver is None:
+                    lengths = state_saver.length
+                    mask = tf.cast(tf.sequence_mask(lengths, T), tf.int32)
+                    loss = self.loss_fun(targets, outputs, weights=mask)
+                else:
+                    log.warning('Loss function called without mask [TODO]')
+                    lengths = None
+                    loss = self.loss_fun(targets, outputs)
 
         loss = tf.Print(loss, [loss], message='loss ')
 

@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 
+from attend.log import Log; log = Log.get_logger(__name__)
 
 class Encoder():
     ALLOWED_CONV_IMPLS = ['small', 'convnet', 'resnet', 'vggface', 'none']
@@ -37,7 +38,7 @@ class Encoder():
         with tf.variable_scope('encoder'):
             x = self.conv_network(x)
             if self.dense_layer:
-                print('Using a dense layer in the encoder')
+                log.debug('Using a dense layer in the encoder')
                 x = self.dense(x)
             if self.encode_hidden_units > 0:
                 x = self._encode_lstm(x, state_saver)
@@ -53,7 +54,7 @@ class Encoder():
             with g.as_default():
                 x = tf.placeholder(dtype=tf.float32, shape=[None, None, *input_dims])
                 conv_out = self(x)
-                print('conv out', conv_out.shape)
+                log.debug('Encoder output shape %s', conv_out.shape)
                 return conv_out.shape.as_list()[1:]
 
     def dense(self, x):
@@ -235,11 +236,16 @@ class Encoder():
             x_by_time = tf.split(value=x, num_or_size_splits=self.time_steps, axis=1)
             x_by_time = list(map(tf.squeeze, x_by_time))
             # assert len(x_by_time) == self.time_steps
-            # Could have used `static_state_saving_rnn` but
-            # c = state_saver.state('encoder_lstm_c')
-            out, _ = tf.contrib.rnn.static_state_saving_rnn(lstm_cell, x_by_time,
-                    state_saver=state_saver,
-                    state_name=(Provider.ENCODE_LSTM_C, Provider.ENCODE_LSTM_H))
+
+            if not state_saver is None:
+                out, _ = tf.contrib.rnn.static_state_saving_rnn(lstm_cell, x_by_time,
+                        state_saver=state_saver,
+                        state_name=(Provider.ENCODE_LSTM_C, Provider.ENCODE_LSTM_H))
+            else:
+                # Dynamic because we assume difference time lengths come through
+                out, _ = tf.nn.dynamic_rnn(lstm_cell, x_by_time)
+
+
             # TODO for some weird reason their implementation needs a batch size
             # So let's do our own once the time's there
             out = tf.stack(out, axis=1)

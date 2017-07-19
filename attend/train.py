@@ -37,6 +37,12 @@ def _save_arguments(args, log_dir):
         json.dump(args.__dict__, f, sort_keys=True, indent='\t')
 
 
+def _save_pid(log_dir):
+    file_name = log_dir + '/pid'
+    with open(file_name, 'w') as f:
+        f.write(str(os.getpid()))
+
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -47,6 +53,7 @@ if __name__ == '__main__':
                         help='Directory to hold logs')
     parser.add_argument('--batch_size', type=int)
     parser.add_argument('--encode_hidden_units', type=int)
+    parser.add_argument('--time_steps', type=int)
     parser.add_argument('--conv_impl', type=str)
     parser.add_argument('--attention_impl', type=str)
 
@@ -63,6 +70,7 @@ if __name__ == '__main__':
         os.makedirs(args.log_dir, exist_ok=True)
 
     _save_arguments(args, args.log_dir)
+    _save_pid(args.log_dir)
 
     from attend.log import Log
     Log.setup(args.log_dir + '/log.txt', args.debug)
