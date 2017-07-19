@@ -11,10 +11,13 @@ from attend.defaults import Defaults
 from attend.util import *
 
 
-def _gen_log_dir(base_dir):
+def _gen_log_dir(base_dir, prefix=''):
     # Create a folder to hold results
     time_str = time.strftime("%d-%m-%Y-%H-%M-%S", time.gmtime())
-    base_log_dir = time_str
+    if prefix == '' or prefix is None:
+        base_log_dir = time_str
+    else:
+        base_log_dir = '{}_{}'.format(prefix, time_str)
     log_dir = base_dir + '/' + base_log_dir
     os.makedirs(log_dir, exist_ok=True)
 
@@ -51,6 +54,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-debug', dest='debug', action='store_false')
     parser.add_argument('--log_dir', type=str, default='log',
                         help='Directory to hold logs')
+    parser.add_argument('--prefix', type=str, default='')
     parser.add_argument('--batch_size', type=int)
     parser.add_argument('--encode_hidden_units', type=int)
     parser.add_argument('--time_steps', type=int)
@@ -65,7 +69,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.gen_log_dir:
-        args.log_dir = _gen_log_dir(args.log_dir)
+        args.log_dir = _gen_log_dir(args.log_dir, args.prefix)
     else:
         os.makedirs(args.log_dir, exist_ok=True)
 
