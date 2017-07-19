@@ -161,11 +161,11 @@ class AttendModel():
             save_state_scope = 'save_state'
             with tf.variable_scope(save_state_scope):
                 save_state = tf.group(
-                    state_saver.save_state('lstm_c', c, save_state_scope + '_c'),
-                    state_saver.save_state('lstm_h', h, save_state_scope + '_h'),
+                    state_saver.save_state('lstm_c', c, 'lstm_c'),
+                    state_saver.save_state('lstm_h', h, 'lstm_h'),
                     state_saver.save_state('first',
-                        tf.zeros([batch_size], dtype=tf.bool), save_state_scope + '_first'),
-                    state_saver.save_state('history', x, save_state_scope + '_history')
+                        tf.zeros([batch_size], dtype=tf.bool), 'first'),
+                    state_saver.save_state('history', x, 'history')
                 )
             control_deps.append(save_state)
 
