@@ -4,22 +4,6 @@ import numpy as np
 from attend.readers import *
 from attend.log import Log; log = Log.get_logger(__name__)
 
-# def input_pipeline():
-#     with tf.name_scope('input'):
-
-#         if seq_q:
-
-#         else:
-#             example_batch, target_batch = tf.train.batch(
-#                 [example, target], batch_size=batch_size,
-#                 num_threads=2,
-#                 dynamic_pad=True,
-#                 capacity=32 # TODO look into these values
-#                 )
-
-#     return example_batch, target_batch
-
-
 class Provider():
     ENCODE_LSTM_C = 'encode_lstm_c'
     ENCODE_LSTM_H = 'encode_lstm_h'
@@ -37,7 +21,11 @@ class Provider():
         self.dim_feature = [224, 224, 3]
         self.encoder     = encoder
         # Encoded dimension after flattening
-        self.scope       = 'input'
+        # self.scope       = 'input'
+        # with tf.name_scope('input') as name_scope:
+        #     self.name_scope = name_scope
+        # with tf.variable_scope('input') as scope:
+        #     self.scope = scope
         self.state_saver = None
         self.debug = debug
 
@@ -70,7 +58,7 @@ class Provider():
 
 
     def batch_static_pad(self):
-        example, target, context = self.input_producer(self.filenames[0], self.feat_name, self.scope)
+        example, target, context = self.input_producer(self.filenames[0], self.feat_name, self.name_scope)
 
         # TODO cheating
         self.dim_feature = (np.prod(self.dim_feature),)
@@ -100,43 +88,35 @@ class Provider():
 
 
     def batch_sequences_with_states(self):
-        example, target, context = self.input_producer(self.filenames[0], self.feat_name, self.scope)
-        # TODO batch_sequences_with_states needs a shape, try to get rid of that?
-        # example.set_shape([None, np.prod(self.dim_feature)])
+        with tf.variable_scope('input') as scope:
+            example, target, context = self.input_producer(self.filenames[0], self.feat_name, scope)
 
-        # If mismatch, it probably needs a reshape
-        if len(self.dim_feature) + 1 != example.shape.ndims:
-            example = tf.reshape(example, [-1, *self.dim_feature])
-        example.shape.merge_with([None, *self.dim_feature])
+            # If mismatch, it probably needs a reshape
+            with tf.name_scope('reshape'):
+                if len(self.dim_feature) + 1 != example.shape.ndims:
+                    example = tf.reshape(example, [-1, *self.dim_feature])
+                example.shape.merge_with([None, *self.dim_feature])
 
-        # TODO
-        # This is just for debugging when source and target sequence don't match in len
-        # if self.debug:
-        #     min_time_steps = tf.minimum(tf.shape(example)[0], tf.shape(target)[0])
-        #     example = example[:min_time_steps]
-        #     target = target[:min_time_steps]
-
-        with tf.name_scope(self.scope):
-            # TODO this should really be like _initial_lstm in model.py
-            # dim_conv = 14 * 14 * 512
+            # tf.assert_equal(tf.shape(example)[0], tf.shape(target)[0])
 
             # NOTE it's important every state below is saved, otherwise it blocks
-            initial_states = {
-                    'lstm_c': tf.zeros([self.H], dtype=tf.float32),
-                    'lstm_h': tf.zeros([self.H], dtype=tf.float32),
-                    # Keep the previous batch around too for extra history
-                    'history': tf.zeros([self.T, np.prod(self.dim_feature)], dtype=tf.float32),
-                    'first': tf.constant(True)
-                }
+            with tf.variable_scope('initial'):
+                initial_states = {
+                        'lstm_c': tf.zeros([self.H], dtype=tf.float32),
+                        'lstm_h': tf.zeros([self.H], dtype=tf.float32),
+                        # Keep the previous batch around too for extra history
+                        'history': tf.zeros([self.T, np.prod(self.dim_feature)], dtype=tf.float32),
+                        'first': tf.constant(True)
+                    }
 
-            if self.encoder.encode_lstm:
-                log.debug('Preparing encoder LSTM saved state')
-                initial_states.update({
-                    Provider.ENCODE_LSTM_C: \
-                            tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
-                    Provider.ENCODE_LSTM_H: \
-                            tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
-                    })
+                if self.encoder.encode_lstm:
+                    log.debug('Preparing encoder LSTM saved state')
+                    initial_states.update({
+                        Provider.ENCODE_LSTM_C: \
+                                tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
+                        Provider.ENCODE_LSTM_H: \
+                                tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
+                        })
 
             batch = tf.contrib.training.batch_sequences_with_states(
                     input_sequences={
@@ -145,12 +125,12 @@ class Provider():
                     },
                     input_key      = context['key'],
                     input_context  = context,
-                    input_length   = tf.cast(context['num_frames'], tf.int32),
+                    input_length   = context['num_frames'],
                     initial_states = initial_states,
                     num_unroll     = self.time_steps,
                     batch_size     = self.batch_size,
-                    num_threads    = 1, # TODO change
-                    capacity       = self.batch_size,
+                    num_threads    = 2, # TODO change
+                    capacity       = self.batch_size * 4,
                     name           = 'batch_seq_with_states'
                     )
             example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]

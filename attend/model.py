@@ -189,7 +189,8 @@ class AttendModel():
                     lengths = None
                     loss = self.loss_fun(targets, outputs)
 
-        loss = tf.Print(loss, [loss], message='loss ')
+        if self.debug:
+            loss = tf.Print(loss, [loss], message='loss ')
 
         return loss
 

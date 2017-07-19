@@ -69,7 +69,7 @@ def generate_single_sequence_example(
     Generates a single sequence from a sequence generator
     """
 
-    with tf.name_scope(scope):
+    with tf.variable_scope(scope):
         dtypes = [tf.float32, tf.float32, tf.string, tf.int32]
         # features and targets are sequences of unknown length
         shapes = [tf.TensorShape([None]).concatenate(reader.feature_shape),
@@ -100,8 +100,6 @@ def generate_single_sequence_example(
         # Dequeueing loses shape, so set it back
         for i, tensor in enumerate(sample):
             tensor.set_shape(shapes[i])
-
-        # sample[2] = tf.Print(sample[2],[sample[2], sample[3]], message='sample')
 
         return sample[0], sample[1], dict(key=sample[2], num_frames=sample[3])
 
@@ -140,9 +138,7 @@ class HDF5SequenceReader:
 
 
 def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
-    with tf.name_scope(scope):
-        # TODO so why does this record reader not accept a capacity?
-        # It's a queue right? So waddup
+    with tf.variable_scope('read_tfrecords'):
         reader = tf.TFRecordReader()
         _, serialized_example = reader.read(filename_q)
         # https://github.com/tensorflow/tensorflow/issues/976
@@ -161,27 +157,23 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
                     'features': tf.FixedLenSequenceFeature([], dtype=tf.float32),
                     feat_name  : tf.FixedLenSequenceFeature([1], dtype = tf.float32)
                 },
-                name='read_tfrecords')
+                name='parse_sequence')
 
         # images = tf.decode_raw(feature_lists['features'], tf.float32)
         images = feature_lists['features']
-        # context['num_frames'] = context['features.shape'][0]
         context['key'] = tf.Print(context['key'], [context['key'], context['num_frames']], message='video ')
-        # context['key'] = tf.Print(context['key'], [tf.shape(images)])
-        # images = tf.Print(images, [tf.shape(images)], message='images shape ')
+        context['num_frames'] = tf.cast(context['num_frames'], tf.int32)
 
         return images, feature_lists[feat_name], context
 
 
 def read_single_sequence_example_fom_tfrecord(filename, feat_name, scope, **kwargs):
-    with tf.name_scope(scope):
-        filename_q = tf.train.string_input_producer(
-                [filename], num_epochs=kwargs.get('num_epochs', None), name='filename_queue')
-        # filename_q.dequeue = tf.Print(filename_q.dequeue, [filename_q.dequeue], message='file deq')
+    # with tf.name_scope('read_single_tfrecord'):
+    filename_q = tf.train.string_input_producer(
+            [filename], num_epochs=kwargs.get('num_epochs', None), name='filename_queue')
 
-        example, target, context = read_and_decode_from_tfrecords(filename_q, feat_name, scope)
-        # print((example.shape, target.shape, context['subject']))
-        return example, target, context
+    example, target, context = read_and_decode_from_tfrecords(filename_q, feat_name, scope)
+    return example, target, context
 
 
 def read_shape_from_tfrecords_for(filename, key='features'):
