@@ -19,10 +19,16 @@ def batch(iterable, n):
     for batch in batch_pad(iterable, n, None):
         yield list(filter(lambda x: not x is None, batch))
 
+def path_is_file(file_or_dir):
+    return '.' in file_or_dir.split('/')[-1]
+
 
 def makedirs_if_needed(file_or_dir):
+    if path_is_file(file_or_dir):
+        file_or_dir = '/'.join(file_or_dir.split('/')[:-1])
     if '/' in file_or_dir:
-        path = '/'.join(file_or_dir.split('/')[:-1])
+        path = file_or_dir
+        print(path)
         os.makedirs(path, exist_ok=True)
 
 
