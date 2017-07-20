@@ -1,6 +1,8 @@
 import threading
 import tensorflow as tf
 
+from attend.log import Log; log = Log.get_logger(__name__)
+
 # https://gist.github.com/jimfleming/d1118cc630f5c883223a4b4645cc2e7b
 class GeneratorRunner:
     "Custom runner that that runs an generator in a thread and enqueues the outputs."
@@ -161,7 +163,8 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
 
         # images = tf.decode_raw(feature_lists['features'], tf.float32)
         images = feature_lists['features']
-        context['key'] = tf.Print(context['key'], [context['key'], context['num_frames']], message='video ')
+        if Log.debug:
+            context['key'] = tf.Print(context['key'], [context['key'], context['num_frames']], message='video ')
         context['num_frames'] = tf.cast(context['num_frames'], tf.int32)
 
         return images, feature_lists[feat_name], context

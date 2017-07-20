@@ -87,7 +87,7 @@ class AttendSolver():
             summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
 
             t_start = time()
-            log.debug('Started')
+            log.info('Started training')
 
             try:
                 # while not sv.should_stop():

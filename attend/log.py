@@ -8,6 +8,7 @@ class Log:
     @classmethod
     def setup(cls, filename, debug=True):
         cls.filename = filename
+        cls.debug = debug
         cls.level = logging.DEBUG if debug else logging.INFO
         file_formatter = logging.Formatter('%(asctime)s - %(name)-20s - %(levelname)-8s : %(message)s')
         file_handler = logging.FileHandler(filename)

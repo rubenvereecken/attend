@@ -127,6 +127,8 @@ class AttendModel():
         outputs = []
 
         with tf.variable_scope('decoder'):
+            lstm_scope = None
+            decode_lstm_scope = None
             for t in range(T):
                 if t == 0:
                     # Fill with null values first go because there is no previous
@@ -146,13 +148,13 @@ class AttendModel():
                 else:
                     decoder_lstm_input = tf.concat([true_prev_target, x[:,t,:]], 1)
 
-                # TODO bring scope outside?
-                with tf.name_scope('lstm'):
+                with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
                     _, (c, h) = lstm_cell(inputs=decoder_lstm_input, state=[c, h])
 
-                with tf.name_scope('decode_lstm'):
+                with tf.name_scope(decode_lstm_scope or 'decode_lstm_step') as decode_lstm_scope:
                     output = self._decode(c, dropout=True, reuse=(t!=0))
                     outputs.append(output)
+            outputs = tf.squeeze(tf.stack(outputs, axis=1)) # B x T
 
         control_deps = []
 
@@ -173,7 +175,6 @@ class AttendModel():
         # into the rest of the computation graph, but also makes it messy
         with tf.control_dependencies(control_deps):
             with tf.variable_scope('loss'):
-                outputs = tf.squeeze(tf.stack(outputs, axis=1)) # B x T
                 # TODO squeeze elsewhere man
                 targets = tf.squeeze(targets)
                 # outputs = tf.Print(outputs, [tf.shape(outputs)], message='outputs shape ')
