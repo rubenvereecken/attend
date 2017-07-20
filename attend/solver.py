@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 from time import time
 
+from tqdm import tqdm
+
 from util import *
 from attend.log import Log; log = Log.get_logger(__name__)
 
@@ -89,6 +91,9 @@ class AttendSolver():
             t_start = time()
             log.info('Started training')
 
+            epoch_bar = tqdm(total=num_epochs, position=0)
+            step_bar = tqdm(total=steps_per_epoch, position=1, leave=num_epochs<=1)
+
             try:
                 # while not sv.should_stop():
                 while not coord.should_stop():
@@ -100,15 +105,23 @@ class AttendSolver():
                     summary_writer.add_summary(summary, global_step_value)
                     # import pdb; pdb.set_trace()
 
+                    step_bar.update(1)
+
                     # Run training steps or whatever
                     if global_step_value % steps_per_epoch == 0:
-                        # TODO do some post epoch stuff
-                        pass
+                        last_epoch = global_step_value / steps_per_epoch >= num_epochs - 1
+                        finished = global_step_value / steps_per_epoch == num_epochs
+                        if not finished: # Leave the last one for inspection
+                            step_bar.close()
+                            step_bar = tqdm(total=steps_per_epoch, leave=last_epoch)
+                        epoch_bar.update(1)
+
                     if global_step_value == steps_per_epoch * num_epochs:
                         # TODO you done
                         # sv.request_stop()
-                        log.debug('Completed final step')
+                        log.info('Completed final step')
                         coord.request_stop()
+
             except tf.errors.OutOfRangeError:
                 log.info('Done training -- epoch limit reached')
                 notify('Done training', 'Took {:.1f}s'.format(time() - t_start))
@@ -116,11 +129,13 @@ class AttendSolver():
                 log.critical(e)
                 notify('Error occurred', 'Took {:.1f}s'.format(time() - t_start))
             finally:
+                epoch_bar.close()
+                step_bar.close()
                 log.debug('Finally - ...')
                 # Requests the coordinator to stop, joins threads
                 # and closes the summary writer if enabled through supervisor
                 coord.join(threads + input_threads)
                 # sv.stop()
-                coord.stop()
+                # coord.stop() DOESNT EXIST
 
             sess.close()

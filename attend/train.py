@@ -56,6 +56,8 @@ if __name__ == '__main__':
                         help='Directory to hold logs')
     parser.add_argument('--prefix', type=str, default='')
     parser.add_argument('--batch_size', type=int)
+    parser.add_argument('--steps_per_epoch', type=int)
+    parser.add_argument('--num_epochs', type=int)
     parser.add_argument('--encode_hidden_units', type=int)
     parser.add_argument('--time_steps', type=int)
     parser.add_argument('--conv_impl', type=str)
