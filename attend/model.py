@@ -178,7 +178,22 @@ class AttendModel():
             lengths = state_saver.length
             outputs = tf.identity(outputs) # Tricksy way of injecting dependency
 
-        return outputs, lengths
+        # Is sparse for some annoying reason
+
+        # Can't get the damn key out TODO
+        # state_saver.key.set_shape([1])
+        # key_splits = tf.split(state_saver.key, ':')
+        # original_keys = key_splits.values[1::2] # Every second from the splits, being the keys
+
+        context = {
+                'length': lengths,
+                'sequence_idx': state_saver.sequence,
+                'sequence_count': state_saver.sequence_count,
+                # 'original_key': original_keys,
+                'key': state_saver.key,
+                }
+
+        return outputs, context
 
 
     def calculate_loss(self, predictions, targets, lengths=None):
@@ -195,18 +210,25 @@ class AttendModel():
         return loss
 
 
+    # It's important to have losses per entire sequence
     def calculate_losses(self, predictions, targets, lengths=None, scope='loss'):
+        losses = {}
+
         with tf.variable_scope(scope):
             T = tf.shape(targets)[1]
             targets = tf.squeeze(targets) # Get rid of trailing 1-dimensions
             # Tails of sequences are likely padded, so create a mask to ignore padding
             mask = tf.cast(tf.sequence_mask(lengths, T), tf.int32) if lengths is not None else None
-            loss = self.loss_fun(targets, predictions, weights=mask)
+            loss = self.loss_fun(targets, predictions, weights=mask, reduction='none') # B x T
+
+            losses['mse'] = loss
+            # TODO mask this if used
+            losses['mse_reduced'] = tf.reduce_mean(loss, axis=1)
 
         # if self.debug:
         #     loss = tf.Print(loss, [loss], message='loss ')
 
-        return loss
+        return losses
 
 
     def _decode(self, h, dropout=False, reuse=False):
