@@ -173,7 +173,8 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
 def read_single_sequence_example_fom_tfrecord(filename, feat_name, scope, **kwargs):
     # with tf.name_scope('read_single_tfrecord'):
     filename_q = tf.train.string_input_producer(
-            [filename], num_epochs=kwargs.get('num_epochs', None), name='filename_queue')
+            [filename], num_epochs=kwargs.get('num_epochs', None),
+            name=kwargs.get('name', 'filename_queue'))
 
     example, target, context = read_and_decode_from_tfrecords(filename_q, feat_name, scope)
     return example, target, context

@@ -78,16 +78,13 @@ class AttendModel():
             return context, alpha
 
 
-    # TODO split this up in predict and loss or something
-    def build_model(self, provider, seq_q=True):
+    def build_model(self, provider, train=True):
         """Build the entire model
 
         Args:
             features: Feature batch Tensor (from provider)
             targets: Targets batch Tensor
         """
-        assert seq_q
-
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
 
@@ -98,16 +95,16 @@ class AttendModel():
         # loss = tf.Print(loss, [loss], message='loss ')
         # return loss
 
-        T = self.T if not self.T is None else tf.shape(targets[1])
+        T = self.T if not self.T is None else tf.shape(features[1])
 
         # Consider batch normalizing features instead of mean subtract
         x = features
 
         with tf.variable_scope('input_shape'):
-            batch_size = tf.shape(targets)[0]
+            batch_size = tf.shape(features)[0]
             x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
-            if self.debug:
-                x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
+            # if self.debug:
+            #     x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
 
         x = self.encoder(x, state_saver)
         log.debug('encoded shape %s', x.shape)
@@ -132,11 +129,14 @@ class AttendModel():
             for t in range(T):
                 if t == 0:
                     # Fill with null values first go because there is no previous
-                    # Assumes target dim of 1 per time step
-                    true_prev_target = tf.zeros([batch_size, 1])
-                else:
+                    true_prev_target = tf.zeros([batch_size, 1]) # T x 1
+                elif train:
                     # Feed back in last true input
-                    true_prev_target = targets[:, t]
+                    true_prev_target = targets[:, t-1]
+                else:
+                    # Feed back in previous prediction
+                    true_prev_target = output
+
 
                 if self.attention_layer:
                     # for t = 0, use current and t-1 from history
@@ -148,13 +148,14 @@ class AttendModel():
                 else:
                     decoder_lstm_input = tf.concat([true_prev_target, x[:,t,:]], 1)
 
+                # TODO bring scope outside?
                 with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
                     _, (c, h) = lstm_cell(inputs=decoder_lstm_input, state=[c, h])
 
                 with tf.name_scope(decode_lstm_scope or 'decode_lstm_step') as decode_lstm_scope:
                     output = self._decode(c, dropout=True, reuse=(t!=0))
                     outputs.append(output)
-            outputs = tf.squeeze(tf.stack(outputs, axis=1)) # B x T
+            outputs = tf.squeeze(tf.stack(outputs, axis=1), axis=[2]) # B x T
 
         control_deps = []
 
@@ -174,24 +175,36 @@ class AttendModel():
         # Makes it easier by just injecting the save state control op
         # into the rest of the computation graph, but also makes it messy
         with tf.control_dependencies(control_deps):
-            with tf.variable_scope('loss'):
-                # TODO squeeze elsewhere man
-                targets = tf.squeeze(targets)
-                # outputs = tf.Print(outputs, [tf.shape(outputs)], message='outputs shape ')
-                # targets = tf.Print(targets, [tf.shape(targets)], message='targets shape ')
+            lengths = state_saver.length
+            outputs = tf.identity(outputs) # Tricksy way of injecting dependency
 
-                # Tails of sequences are likely padded, so create a mask to ignore padding
-                if not state_saver is None:
-                    lengths = state_saver.length
-                    mask = tf.cast(tf.sequence_mask(lengths, T), tf.int32)
-                    loss = self.loss_fun(targets, outputs, weights=mask)
-                else:
-                    log.warning('Loss function called without mask [TODO]')
-                    lengths = None
-                    loss = self.loss_fun(targets, outputs)
+        return outputs, lengths
 
-        if self.debug:
-            loss = tf.Print(loss, [loss], message='loss ')
+
+    def calculate_loss(self, predictions, targets, lengths=None):
+        with tf.variable_scope('loss'):
+            T = tf.shape(targets)[1]
+            targets = tf.squeeze(targets) # Get rid of trailing 1-dimensions
+            # Tails of sequences are likely padded, so create a mask to ignore padding
+            mask = tf.cast(tf.sequence_mask(lengths, T), tf.int32) if lengths is not None else None
+            loss = self.loss_fun(targets, predictions, weights=mask)
+
+        # if self.debug:
+        #     loss = tf.Print(loss, [loss], message='loss ')
+
+        return loss
+
+
+    def calculate_losses(self, predictions, targets, lengths=None, scope='loss'):
+        with tf.variable_scope(scope):
+            T = tf.shape(targets)[1]
+            targets = tf.squeeze(targets) # Get rid of trailing 1-dimensions
+            # Tails of sequences are likely padded, so create a mask to ignore padding
+            mask = tf.cast(tf.sequence_mask(lengths, T), tf.int32) if lengths is not None else None
+            loss = self.loss_fun(targets, predictions, weights=mask)
+
+        # if self.debug:
+        #     loss = tf.Print(loss, [loss], message='loss ')
 
         return loss
 

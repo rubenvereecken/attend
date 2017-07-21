@@ -8,15 +8,17 @@ class Provider():
     ENCODE_LSTM_C = 'encode_lstm_c'
     ENCODE_LSTM_H = 'encode_lstm_h'
 
-    def __init__(self, filenames, encoder, batch_size, num_hidden, time_steps, feat_name='conflict',
-            num_epochs=None, seq_q=True, debug=False):
+    def __init__(self, filenames, encoder, batch_size, num_hidden, time_steps,
+            feat_name='conflict',
+            # num_epochs=None,
+            seq_q=True, debug=False):
         self.filenames   = filenames
         self.batch_size  = batch_size
         self.time_steps  = time_steps
         self.T           = time_steps
         self.H           = num_hidden
         self.feat_name   = feat_name
-        self.num_epochs  = num_epochs
+        # self.num_epochs  = num_epochs
         self.seq_q       = seq_q
         self.dim_feature = [224, 224, 3]
         self.encoder     = encoder
@@ -87,9 +89,12 @@ class Provider():
         return example_batch, target_batch
 
 
-    def batch_sequences_with_states(self):
+    def batch_sequences_with_states(self, num_epochs=None, name=None, collection=None):
         with tf.variable_scope('input') as scope:
-            example, target, context = self.input_producer(self.filenames[0], self.feat_name, scope)
+            g = tf.get_default_graph()
+            example, target, context = self.input_producer(self.filenames[0],
+                    self.feat_name, scope, num_epochs=num_epochs)
+
 
             # If mismatch, it probably needs a reshape
             with tf.name_scope('reshape'):
@@ -130,10 +135,17 @@ class Provider():
                     num_unroll     = self.time_steps,
                     batch_size     = self.batch_size,
                     num_threads    = 2, # TODO change
-                    capacity       = self.batch_size * 4,
+                    capacity       = self.batch_size * 1,
                     name           = 'batch_seq_with_states'
                     )
             example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]
+
+            # Move the queue runners to a different collection
+            if not collection is None:
+                runners = g.get_collection_ref(tf.GraphKeys.QUEUE_RUNNERS)
+                removed = [runners.pop(), runners.pop()]
+                for r in removed:
+                    tf.train.add_queue_runner(r, collection)
 
             self.features    = example_batch
             self.targets     = target_batch
@@ -142,3 +154,7 @@ class Provider():
             # So like [?, T, 1] instead of just [?, T]
             if len(self.targets.shape) <= 2:
                 self.targets = tf.expand_dims(self.targets, -1)
+
+
+# class InMemoryProvider:
+

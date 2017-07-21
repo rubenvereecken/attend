@@ -90,7 +90,7 @@ def process(in_file, out_dir, split_names, split_fracs):
 
     for split_name, keys in zip(split_names, split_keys):
         out_file = '{}/{}.hdf5'.format(out_dir, split_name)
-        print('extracting `{}` set'.format(split_name))
+        print('extracting `{}` set ({})'.format(split_name, len(keys)))
         extract(in_file, out_file, keys)
 
 

@@ -2,10 +2,10 @@ import tensorflow as tf
 import numpy as np
 from time import time
 
-from tqdm import tqdm
 
 from util import *
 from attend.log import Log; log = Log.get_logger(__name__)
+import attend
 
 class AttendSolver():
     def __init__(self, model, update_rule, learning_rate):
@@ -21,19 +21,43 @@ class AttendSolver():
 
 
     def train(self, num_epochs, steps_per_epoch, batch_size, time_steps,
-              provider, # TODO not really used?
+              provider,
               encoder,
               log_dir,
-              debug=False):
+              val_provider=None,
+              debug=False,
+              show_progress_bar=None):
+
+        if show_progress_bar is None and debug is False:
+            show_progress_bar = True
+        if show_progress_bar:
+            from tqdm import tqdm
+            progress_wrapper = tqdm
+        else:
+            progress_wrapper = lambda i, **kwargs: i
+
 
         # For now, its results are stored inside the provider
         provider.batch_sequences_with_states()
         # provider.batch_static_pad()
 
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        loss_op = self.model.build_model(provider)
 
-        with tf.name_scope('optimizer'):
+        # Prediction and loss
+        with tf.variable_scope(tf.get_variable_scope()):
+            outputs, lengths = self.model.build_model(provider, train=True)
+            loss_op = self.model.calculate_loss(outputs, provider.targets, lengths)
+
+        if not val_provider is None:
+            val_provider.batch_sequences_with_states(1,
+                    collection=attend.GraphKeys.VAL_INPUT_RUNNERS)
+            with tf.variable_scope(tf.get_variable_scope(), reuse=True):
+                # tf.get_variable_scope().reuse_variables()
+                val_outputs, val_lengths = self.model.build_model(val_provider, train=False)
+                val_losses = self.model.calculate_losses(val_outputs,
+                        val_provider.targets, val_lengths, 'val_loss')
+
+        with tf.variable_scope('optimizer', reuse=False):
             optimizer = self.optimizer(learning_rate=self.learning_rate)
             # train_op = optimizer.minimize(loss_op, global_step=global_step,
             #         var_list=tf.trainable_variables())
@@ -74,53 +98,61 @@ class AttendSolver():
         else:
             config = tf.ConfigProto()
 
+        # all_vars =
+        saver = tf.train.Saver()
+
         # Managed session will do the necessary init_ops, start queue runners,
         # start checkpointing/summary service
         # It will also recover from a checkpoint if available
         # with sv.managed_session(config=config) as sess:
         with tf.Session() as sess:
             sess.run(init_op)
+            saver.save(sess, log_dir + '/model.ckpt')
+            raise Exception()
             # Special input runners run separately because the supervisor can't
             # serialize them
             # input_threads = tf.train.start_queue_runners(sess=sess, coord=coord,
             #         collection='input_runners')
             input_threads = []
+            g = tf.get_default_graph()
+            runners = g.get_collection(tf.GraphKeys.QUEUE_RUNNERS)
+            log.debug('%s', [r.name for r in runners])
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
             summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
 
             t_start = time()
             log.info('Started training')
 
-            epoch_bar = tqdm(total=num_epochs, position=0)
-            step_bar = tqdm(total=steps_per_epoch, position=1, leave=num_epochs<=1)
-
             try:
-                # while not sv.should_stop():
-                while not coord.should_stop():
-                    # Run batch_loss summary op together with loss_op
-                    # Otherwise it will recompute the loss separately
-                    loss, _, summary = sess.run([loss_op, train_op, summary_op])
-                    global_step_value = tf.train.global_step(sess, global_step)
+                # while not coord.should_stop():
+                for epoch_i in progress_wrapper(range(num_epochs)):
+                    for step_i in progress_wrapper(range(steps_per_epoch)):
+                        # Run batch_loss summary op together with loss_op
+                        # Otherwise it will recompute the loss separately
+                        loss, _, summary = sess.run([loss_op, train_op, summary_op])
+                        global_step_value = tf.train.global_step(sess, global_step)
 
-                    summary_writer.add_summary(summary, global_step_value)
-                    # import pdb; pdb.set_trace()
+                        summary_writer.add_summary(summary, global_step_value)
 
-                    step_bar.update(1)
+                        if coord.should_stop():
+                            break
+                        # END STEP
 
-                    # Run training steps or whatever
-                    if global_step_value % steps_per_epoch == 0:
-                        last_epoch = global_step_value / steps_per_epoch >= num_epochs - 1
-                        finished = global_step_value / steps_per_epoch == num_epochs
-                        if not finished: # Leave the last one for inspection
-                            step_bar.close()
-                            step_bar = tqdm(total=steps_per_epoch, leave=last_epoch)
-                        epoch_bar.update(1)
+                    if coord.should_stop():
+                        break
 
-                    if global_step_value == steps_per_epoch * num_epochs:
-                        # TODO you done
-                        # sv.request_stop()
-                        log.info('Completed final step')
-                        coord.request_stop()
+                    # Validation after every epoch
+                    if val_provider:
+                        # Fire up the validation input fetching threads first time
+                        if epoch_i == 0:
+                            val_input_threads = tf.train.start_queue_runners(sess=sess,
+                                    coord=coord, collection=attend.GraphKeys.VAL_INPUT_RUNNERS)
+                            threads += val_input_threads
+
+                        losses = sess.run([val_losses])
+                        print(losses)
+
+                coord.request_stop()
 
             except tf.errors.OutOfRangeError:
                 log.info('Done training -- epoch limit reached')
@@ -129,8 +161,6 @@ class AttendSolver():
                 log.critical(e)
                 notify('Error occurred', 'Took {:.1f}s'.format(time() - t_start))
             finally:
-                epoch_bar.close()
-                step_bar.close()
                 log.debug('Finally - ...')
                 # Requests the coordinator to stop, joins threads
                 # and closes the summary writer if enabled through supervisor
