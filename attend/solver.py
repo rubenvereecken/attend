@@ -36,6 +36,7 @@ class AttendSolver():
         else:
             progress_wrapper = lambda i, **kwargs: i
 
+        g = tf.get_default_graph()
 
         # For now, its results are stored inside the provider
         provider.batch_sequences_with_states()
@@ -50,7 +51,8 @@ class AttendSolver():
 
         if not val_provider is None:
             val_provider.batch_sequences_with_states(1,
-                    collection=attend.GraphKeys.VAL_INPUT_RUNNERS)
+                    collection=attend.GraphKeys.VAL_INPUT_RUNNERS,
+                    container_name='inputcontainer')
             with tf.variable_scope(tf.get_variable_scope(), reuse=True):
                 # tf.get_variable_scope().reuse_variables()
                 val_outputs, val_lengths = self.model.build_model(val_provider, train=False)
@@ -98,23 +100,17 @@ class AttendSolver():
         else:
             config = tf.ConfigProto()
 
-        # all_vars =
-        saver = tf.train.Saver()
-
         # Managed session will do the necessary init_ops, start queue runners,
         # start checkpointing/summary service
         # It will also recover from a checkpoint if available
         # with sv.managed_session(config=config) as sess:
-        with tf.Session() as sess:
+        with tf.Session(graph=g) as sess:
             sess.run(init_op)
-            saver.save(sess, log_dir + '/model.ckpt')
-            raise Exception()
             # Special input runners run separately because the supervisor can't
             # serialize them
             # input_threads = tf.train.start_queue_runners(sess=sess, coord=coord,
             #         collection='input_runners')
             input_threads = []
-            g = tf.get_default_graph()
             runners = g.get_collection(tf.GraphKeys.QUEUE_RUNNERS)
             log.debug('%s', [r.name for r in runners])
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -131,6 +127,7 @@ class AttendSolver():
                         # Otherwise it will recompute the loss separately
                         loss, _, summary = sess.run([loss_op, train_op, summary_op])
                         global_step_value = tf.train.global_step(sess, global_step)
+                        log.debug('TRAIN %s - %s', global_step_value, loss)
 
                         summary_writer.add_summary(summary, global_step_value)
 
@@ -149,8 +146,12 @@ class AttendSolver():
                                     coord=coord, collection=attend.GraphKeys.VAL_INPUT_RUNNERS)
                             threads += val_input_threads
 
-                        losses = sess.run([val_losses])
-                        print(losses)
+                        try:
+                            for i in range(1000):
+                                losses = sess.run([val_losses])
+                                log.debug('TEST  %s, %s', i, losses)
+                        except tf.errors.OutOfRangeError:
+                            log.info('Finished validation')
 
                 coord.request_stop()
 

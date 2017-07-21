@@ -3,6 +3,7 @@ import numpy as np
 
 from attend.readers import *
 from attend.log import Log; log = Log.get_logger(__name__)
+from attend import util
 
 class Provider():
     ENCODE_LSTM_C = 'encode_lstm_c'
@@ -89,72 +90,76 @@ class Provider():
         return example_batch, target_batch
 
 
-    def batch_sequences_with_states(self, num_epochs=None, name=None, collection=None):
-        with tf.variable_scope('input') as scope:
-            g = tf.get_default_graph()
-            example, target, context = self.input_producer(self.filenames[0],
-                    self.feat_name, scope, num_epochs=num_epochs)
+    # TODO change everything to Data API as soon as more support comes in
+    def batch_sequences_with_states(self, num_epochs=None, collection=None,
+            container_name=None):
+        if container_name:
+            container = tf.container(container_name)
+        else:
+            container = util.noop()
+        with container:
+            with tf.variable_scope('input') as scope:
+                g = tf.get_default_graph()
+                example, target, context = self.input_producer(self.filenames[0],
+                        self.feat_name, scope, num_epochs=num_epochs)
 
 
-            # If mismatch, it probably needs a reshape
-            with tf.name_scope('reshape'):
-                if len(self.dim_feature) + 1 != example.shape.ndims:
-                    example = tf.reshape(example, [-1, *self.dim_feature])
-                example.shape.merge_with([None, *self.dim_feature])
+                # If mismatch, it probably needs a reshape
+                with tf.name_scope('reshape'):
+                    if len(self.dim_feature) + 1 != example.shape.ndims:
+                        example = tf.reshape(example, [-1, *self.dim_feature])
+                    example.shape.merge_with([None, *self.dim_feature])
 
-            # tf.assert_equal(tf.shape(example)[0], tf.shape(target)[0])
+                # tf.assert_equal(tf.shape(example)[0], tf.shape(target)[0])
 
-            # NOTE it's important every state below is saved, otherwise it blocks
-            with tf.variable_scope('initial'):
-                initial_states = {
-                        'lstm_c': tf.zeros([self.H], dtype=tf.float32),
-                        'lstm_h': tf.zeros([self.H], dtype=tf.float32),
-                        # Keep the previous batch around too for extra history
-                        'history': tf.zeros([self.T, np.prod(self.dim_encoded)], dtype=tf.float32),
-                        'first': tf.constant(True)
-                    }
+                # NOTE it's important every state below is saved, otherwise it blocks
+                with tf.variable_scope('initial'):
+                    initial_states = {
+                            'lstm_c': tf.zeros([self.H], dtype=tf.float32),
+                            'lstm_h': tf.zeros([self.H], dtype=tf.float32),
+                            # Keep the previous batch around too for extra history
+                            'history': tf.zeros([self.T, np.prod(self.dim_encoded)], dtype=tf.float32),
+                            'first': tf.constant(True)
+                        }
 
-                if self.encoder.encode_lstm:
-                    log.debug('Preparing encoder LSTM saved state')
-                    initial_states.update({
-                        Provider.ENCODE_LSTM_C: \
-                                tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
-                        Provider.ENCODE_LSTM_H: \
-                                tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
-                        })
+                    if self.encoder.encode_lstm:
+                        log.debug('Preparing encoder LSTM saved state')
+                        initial_states.update({
+                            Provider.ENCODE_LSTM_C: \
+                                    tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
+                            Provider.ENCODE_LSTM_H: \
+                                    tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
+                            })
 
-            batch = tf.contrib.training.batch_sequences_with_states(
-                    input_sequences={
-                        'images': example,
-                        self.feat_name: target,
-                    },
-                    input_key      = context['key'],
-                    input_context  = context,
-                    input_length   = context['num_frames'],
-                    initial_states = initial_states,
-                    num_unroll     = self.time_steps,
-                    batch_size     = self.batch_size,
-                    num_threads    = 2, # TODO change
-                    capacity       = self.batch_size * 1,
-                    name           = 'batch_seq_with_states'
-                    )
-            example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]
+                batch = tf.contrib.training.batch_sequences_with_states(
+                        input_sequences={
+                            'images': example,
+                            self.feat_name: target,
+                        },
+                        input_key      = context['key'],
+                        input_context  = context,
+                        input_length   = context['num_frames'],
+                        initial_states = initial_states,
+                        num_unroll     = self.time_steps,
+                        batch_size     = self.batch_size,
+                        num_threads    = 2, # TODO change
+                        capacity       = self.batch_size * 1,
+                        name           = 'batch_seq_with_states'
+                        )
+                example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]
 
-            # Move the queue runners to a different collection
-            if not collection is None:
-                runners = g.get_collection_ref(tf.GraphKeys.QUEUE_RUNNERS)
-                removed = [runners.pop(), runners.pop()]
-                for r in removed:
-                    tf.train.add_queue_runner(r, collection)
+                # Move the queue runners to a different collection
+                if not collection is None:
+                    runners = g.get_collection_ref(tf.GraphKeys.QUEUE_RUNNERS)
+                    removed = [runners.pop(), runners.pop()]
+                    for r in removed:
+                        tf.train.add_queue_runner(r, collection)
 
-            self.features    = example_batch
-            self.targets     = target_batch
-            self.state_saver = batch
-            # This fixes an expectation of targets being single-dimensional further down the line
-            # So like [?, T, 1] instead of just [?, T]
-            if len(self.targets.shape) <= 2:
-                self.targets = tf.expand_dims(self.targets, -1)
-
-
-# class InMemoryProvider:
+                self.features    = example_batch
+                self.targets     = target_batch
+                self.state_saver = batch
+                # This fixes an expectation of targets being single-dimensional further down the line
+                # So like [?, T, 1] instead of just [?, T]
+                if len(self.targets.shape) <= 2:
+                    self.targets = tf.expand_dims(self.targets, -1)
 

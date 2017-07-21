@@ -24,3 +24,9 @@ def init_with(cls, d):
 def notify(title, text='', duration=5000):
     import subprocess as s
     s.call(['notify-send', title, text])
+
+
+import contextlib
+@contextlib.contextmanager
+def noop():
+    yield None
