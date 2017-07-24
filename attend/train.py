@@ -58,6 +58,7 @@ if __name__ == '__main__':
                         help='Directory to hold logs')
     parser.add_argument('--prefix', type=str, default='')
     parser.add_argument('--batch_size', type=int)
+    parser.add_argument('--val_batch_size', type=int)
     parser.add_argument('--steps_per_epoch', type=int)
     parser.add_argument('--num_epochs', type=int)
     parser.add_argument('--encode_hidden_units', type=int)
@@ -90,14 +91,13 @@ if __name__ == '__main__':
     Log.setup(args.log_dir + '/log.txt', args.debug)
     log = Log.get_logger(__name__)
 
-    # model = setup_model(**pick(args.__dict__, list(inspect.signature(setup_model).parameters)))
-    # solver = SEWASolver(None)
     all_args = args.__dict__.copy()
 
     if not all_args['debug']:
         log.info('NOT running in debug mode!')
-    # Easy bool to pass around
-    all_args['encode_lstm'] = all_args['encode_hidden_units'] > 0
+
+    # Fall back to train batch size
+    all_args['val_batch_size'] = all_args['val_batch_size'] or all_args['batch_size']
 
     import inspect
     from attend.solver import AttendSolver
@@ -120,6 +120,7 @@ if __name__ == '__main__':
         val_args = all_args.copy()
         val_args['filenames'] = [args.val_data]
         val_args['shuffle_examples'] = False # Don't shuffle validation data
+        val_args['batch_size'] = all_args['val_batch_size']
         all_args['val_provider'] = init_with(Provider, val_args)
     all_args['model'] = AttendModel(**pick(all_args, params_for(AttendModel.__init__)))
     # all_args['model'] = AttendModel()

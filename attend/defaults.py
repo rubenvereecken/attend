@@ -1,24 +1,25 @@
 
 class Defaults:
     common_params = dict(
-        batch_size      = 1,
-        steps_per_epoch = 1000,
-        num_epochs      = 50,
-        learning_rate   = 0.001,
-        time_steps      = 100,
-        num_hidden      = 512,
-        conv_impl       = 'none',
-        encode_lstm = True,
-        encode_hidden_units = 512,
-        dense_layer     = 1,
+        batch_size                = 12,
+        val_batch_size            = None,
+        steps_per_epoch           = 1000,
+        num_epochs                = 50,
+        learning_rate             = 0.001,
+        time_steps                = 100,
+        num_hidden                = 512,
+        conv_impl                 = 'none',
+        encode_lstm               = True,
+        encode_hidden_units       = 512,
+        dense_layer               = 1,
 
-        update_rule     = 'adam',
+        update_rule               = 'adam',
 
-        shuffle_examples = True,
+        shuffle_examples          = True,
         shuffle_examples_capacity = None,
 
-        shuffle_splits = False,
-        shuffle_splits_capacity = None
+        shuffle_splits            = False,
+        shuffle_splits_capacity   = None
     )
 
     debug_params = dict(
