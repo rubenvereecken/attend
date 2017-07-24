@@ -1,5 +1,8 @@
 import threading
 import tensorflow as tf
+import numpy as np
+
+from collections import OrderedDict
 
 from attend.log import Log; log = Log.get_logger(__name__)
 
@@ -66,7 +69,9 @@ def generate_single_sequence_example(
         reader,
         scope,
         summary_name='input_q',
-        capacity=10):
+        capacity=10,
+        num_epochs=None,
+        shuffle_capacity=0):
     """
     Generates a single sequence from a sequence generator
     """
@@ -149,7 +154,6 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
                 serialized_example,
                 context_features={
                     'key'              : tf.FixedLenFeature([], dtype = tf.string),
-                    # 'video'          : tf.FixedLenFeature([], dtype = tf.string),
                     # TODO just get it from shape
                     # 'features.shape' : tf.FixedLenFeature([], dtype = tf.int64)
                     'num_frames': tf.FixedLenFeature([], dtype=tf.int64)
@@ -170,13 +174,32 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
         return images, feature_lists[feat_name], context
 
 
-def read_single_sequence_example_fom_tfrecord(filename, feat_name, scope, **kwargs):
+def shuffle_data_and_context(example, target, context, capacity, min_after_dequeue=None):
+    q_in = {'example': example, 'target': target}
+    q_in.update(context)
+
+    out = shuffle_queue(q_in, capacity, scope='shuffle_examples')
+    example = out.pop('example')
+    target = out.pop('target')
+    context = out
+
+    return example, target, context
+
+
+def read_single_sequence_example_fom_tfrecord(filename, feat_name, scope,
+        shuffle_capacity=0, num_epochs=None, **kwargs):
+
     # with tf.name_scope('read_single_tfrecord'):
     filename_q = tf.train.string_input_producer(
-            [filename], num_epochs=kwargs.get('num_epochs', None),
-            name=kwargs.get('name', 'filename_queue'))
+            [filename], num_epochs=num_epochs,
+            name=kwargs.pop('name', 'filename_queue'))
 
     example, target, context = read_and_decode_from_tfrecords(filename_q, feat_name, scope)
+
+    if shuffle_capacity > 0:
+        example, target, context = \
+            shuffle_data_and_context(example, target, context, shuffle_capacity, **kwargs)
+
     return example, target, context
 
 
@@ -199,3 +222,31 @@ def read_shape_from_tfrecords_for(filename, key='features'):
     print('Took {:.2f}s to infer {} shape'.format(time.time()-start, key))
     return shape
 
+
+def shuffle_queue(d, capacity, min_after_dequeue=None, scope=None):
+    """
+    d should be an OrderedDict of tensors
+    """
+    if min_after_dequeue is None:
+        min_after_dequeue = np.ceil(capacity / 2)
+
+    with tf.name_scope(scope or 'shuffle'):
+        dtypes = [v.dtype for v in d.values()]
+
+        q = tf.RandomShuffleQueue(capacity=capacity,
+                min_after_dequeue=min_after_dequeue,
+                dtypes=dtypes,
+                names=list(d.keys())
+                )
+
+        out = q.dequeue()
+
+        shapes = { k: v.shape for k, v in d.items() }
+        for k, v in out.items():
+            v.set_shape(shapes[k])
+
+        qr = tf.train.QueueRunner(q, enqueue_ops=[q.enqueue(d)],
+                close_op=q.close(cancel_pending_enqueues=True))
+        tf.train.add_queue_runner(qr)
+
+        return out

@@ -12,6 +12,8 @@ class Provider():
     def __init__(self, filenames, encoder, batch_size, num_hidden, time_steps,
             feat_name='conflict',
             # num_epochs=None,
+            shuffle_examples=False, shuffle_examples_capacity=None,
+            shuffle_splits=False, shuffle_splits_capacity=None,
             seq_q=True, debug=False):
         self.filenames   = filenames
         self.batch_size  = batch_size
@@ -31,6 +33,10 @@ class Provider():
         #     self.scope = scope
         self.state_saver = None
         self.debug = debug
+
+        self.shuffle_examples = shuffle_examples
+        self.shuffle_examples_capacity = shuffle_examples_capacity \
+                if not shuffle_examples_capacity is None else batch_size * 4
 
         if len(filenames) == 1 and filenames[0].endswith('hdf5'):
             # self.input_producer = generate_single_sequence_example_from_hdf5
@@ -52,12 +58,90 @@ class Provider():
 
         self.dim_encoded = self._deduce_encoded_dim()
 
-
-    # TODO seriously find a way to only build the convnet once this is ridiculous
     def _deduce_encoded_dim(self):
         dims = self.encoder.encoded_dim(self.dim_feature)
         if type(dims) == list: dims = np.prod(dims)
         return dims
+
+    def _prepare_initial(self, scope=None):
+        with tf.variable_scope(scope or 'initial'):
+            initial_states = {
+                    'lstm_c': tf.zeros([self.H], dtype=tf.float32),
+                    'lstm_h': tf.zeros([self.H], dtype=tf.float32),
+                    # Keep the previous batch around too for extra history
+                    'history': tf.zeros([self.T, np.prod(self.dim_encoded)], dtype=tf.float32),
+                    'first': tf.constant(True)
+                }
+
+            if self.encoder.encode_lstm:
+                log.debug('Preparing encoder LSTM saved state')
+                initial_states.update({
+                    Provider.ENCODE_LSTM_C: \
+                            tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
+                    Provider.ENCODE_LSTM_H: \
+                            tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
+                    })
+            return initial_states
+
+    def batch_sequences_with_states(self, num_epochs=None, collection=None):
+        container = util.noop()
+        with container:
+            with tf.variable_scope('input') as scope:
+                g = tf.get_default_graph()
+
+                shuffle_capacity = 0 if not self.shuffle_examples \
+                                     else self.shuffle_examples_capacity
+                shuffle_min = max(self.batch_size, np.ceil(.75*shuffle_capacity))
+                if shuffle_capacity > 0:
+                    log.info('Shuffling examples w capacity %s, min %s', shuffle_capacity, shuffle_min)
+
+                example, target, context = self.input_producer(self.filenames[0],
+                        self.feat_name, scope,
+                        num_epochs=num_epochs,
+                        shuffle_capacity=shuffle_capacity,
+                        min_after_dequeue=shuffle_min
+                        )
+
+                # If mismatch, it probably needs a reshape
+                with tf.name_scope('reshape'):
+                    if len(self.dim_feature) + 1 != example.shape.ndims:
+                        example = tf.reshape(example, [-1, *self.dim_feature])
+                    example.shape.merge_with([None, *self.dim_feature])
+
+                initial_states = self._prepare_initial()
+
+                batch = tf.contrib.training.batch_sequences_with_states(
+                        input_sequences={
+                            'images': example,
+                            self.feat_name: target,
+                        },
+                        input_key      = context['key'],
+                        input_context  = context,
+                        input_length   = context['num_frames'],
+                        initial_states = initial_states,
+                        num_unroll     = self.time_steps,
+                        batch_size     = self.batch_size,
+                        num_threads    = 2, # TODO change
+                        capacity       = self.batch_size * 4,
+                        name           = 'batch_seq_with_states',
+                        allow_small_batch = True # Required otherwise blocks
+                        )
+                example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]
+
+                # Move the queue runners to a different collection
+                if not collection is None:
+                    runners = g.get_collection_ref(tf.GraphKeys.QUEUE_RUNNERS)
+                    removed = [runners.pop(), runners.pop()]
+                    for r in removed:
+                        tf.train.add_queue_runner(r, collection)
+
+                self.features    = example_batch
+                self.targets     = target_batch
+                self.state_saver = batch
+                # This fixes an expectation of targets being single-dimensional further down the line
+                # So like [?, T, 1] instead of just [?, T]
+                if len(self.targets.shape) <= 2:
+                    self.targets = tf.expand_dims(self.targets, -1)
 
 
     def batch_static_pad(self):
@@ -88,78 +172,3 @@ class Provider():
         self.targets     = target_batch
 
         return example_batch, target_batch
-
-
-    # TODO change everything to Data API as soon as more support comes in
-    def batch_sequences_with_states(self, num_epochs=None, collection=None,
-            container_name=None):
-        if container_name:
-            container = tf.container(container_name)
-        else:
-            container = util.noop()
-        with container:
-            with tf.variable_scope('input') as scope:
-                g = tf.get_default_graph()
-                example, target, context = self.input_producer(self.filenames[0],
-                        self.feat_name, scope, num_epochs=num_epochs)
-
-
-                # If mismatch, it probably needs a reshape
-                with tf.name_scope('reshape'):
-                    if len(self.dim_feature) + 1 != example.shape.ndims:
-                        example = tf.reshape(example, [-1, *self.dim_feature])
-                    example.shape.merge_with([None, *self.dim_feature])
-
-                # tf.assert_equal(tf.shape(example)[0], tf.shape(target)[0])
-
-                # NOTE it's important every state below is saved, otherwise it blocks
-                with tf.variable_scope('initial'):
-                    initial_states = {
-                            'lstm_c': tf.zeros([self.H], dtype=tf.float32),
-                            'lstm_h': tf.zeros([self.H], dtype=tf.float32),
-                            # Keep the previous batch around too for extra history
-                            'history': tf.zeros([self.T, np.prod(self.dim_encoded)], dtype=tf.float32),
-                            'first': tf.constant(True)
-                        }
-
-                    if self.encoder.encode_lstm:
-                        log.debug('Preparing encoder LSTM saved state')
-                        initial_states.update({
-                            Provider.ENCODE_LSTM_C: \
-                                    tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
-                            Provider.ENCODE_LSTM_H: \
-                                    tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
-                            })
-
-                batch = tf.contrib.training.batch_sequences_with_states(
-                        input_sequences={
-                            'images': example,
-                            self.feat_name: target,
-                        },
-                        input_key      = context['key'],
-                        input_context  = context,
-                        input_length   = context['num_frames'],
-                        initial_states = initial_states,
-                        num_unroll     = self.time_steps,
-                        batch_size     = self.batch_size,
-                        num_threads    = 2, # TODO change
-                        capacity       = self.batch_size * 4,
-                        name           = 'batch_seq_with_states'
-                        )
-                example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]
-
-                # Move the queue runners to a different collection
-                if not collection is None:
-                    runners = g.get_collection_ref(tf.GraphKeys.QUEUE_RUNNERS)
-                    removed = [runners.pop(), runners.pop()]
-                    for r in removed:
-                        tf.train.add_queue_runner(r, collection)
-
-                self.features    = example_batch
-                self.targets     = target_batch
-                self.state_saver = batch
-                # This fixes an expectation of targets being single-dimensional further down the line
-                # So like [?, T, 1] instead of just [?, T]
-                if len(self.targets.shape) <= 2:
-                    self.targets = tf.expand_dims(self.targets, -1)
-

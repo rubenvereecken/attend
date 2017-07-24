@@ -3,6 +3,7 @@
 import argparse
 # import inspect
 import os
+import sys
 import time
 
 import simplejson as json
@@ -63,10 +64,16 @@ if __name__ == '__main__':
     parser.add_argument('--time_steps', type=int)
     parser.add_argument('--conv_impl', type=str)
     parser.add_argument('--attention_impl', type=str)
+    parser.add_argument('--shuffle_examples_capacity', type=int)
+    parser.add_argument('--no_shuffle_examples', dest='shuffle_examples', action='store_false')
+
+    # Not ideal but need to know if debug before things start
+    debug = '--debug' in sys.argv
+    defaults = Defaults(debug)
 
     parser.set_defaults(
             gen_log_dir=True, debug=False,
-            **{k: v for k, v in Defaults.__dict__.items() if not k.startswith('__')}
+            **{k: v for k, v in defaults.__dict__.items() if not k.startswith('__')}
             )
 
     args = parser.parse_args()
@@ -104,11 +111,15 @@ if __name__ == '__main__':
     # The goal is to have the provider set up asap so it can start reading
     # all_args['provider'] = Provider(**pick(all_args, params_for(Provider.__init__)))
     all_args['encoder'] = init_with(Encoder, all_args)
-    all_args['provider'] = init_with(Provider, all_args)
+
+    provider_args = all_args.copy()
+    all_args['provider'] = init_with(Provider, provider_args)
+
     if not args.val_data is None:
         assert os.path.exists(args.val_data), "Validation data not found"
         val_args = all_args.copy()
         val_args['filenames'] = [args.val_data]
+        val_args['shuffle_examples'] = False # Don't shuffle validation data
         all_args['val_provider'] = init_with(Provider, val_args)
     all_args['model'] = AttendModel(**pick(all_args, params_for(AttendModel.__init__)))
     # all_args['model'] = AttendModel()
