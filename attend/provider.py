@@ -115,7 +115,7 @@ class Provider():
                             'images': example,
                             self.feat_name: target,
                         },
-                        input_key      = context['key'],
+                        input_key      = context['key'] + ':', # : for split
                         input_context  = context,
                         input_length   = context['num_frames'],
                         initial_states = initial_states,
@@ -124,6 +124,7 @@ class Provider():
                         num_threads    = 2, # TODO change
                         capacity       = self.batch_size * 4,
                         name           = 'batch_seq_with_states',
+                        make_keys_unique = True,
                         allow_small_batch = True # Required otherwise blocks
                         )
                 example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]

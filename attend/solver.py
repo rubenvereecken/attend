@@ -51,7 +51,7 @@ class AttendSolver():
                 fetch.update(context_ops)
                 fetch.update(loss_ops)
                 out = sess.run(fetch)
-                original_keys = list(map(lambda k: str(k).split(':')[-1], out['key']))
+                original_keys = list(map(lambda k: (str(k).split(':')[1]), out['key']))
                 for i, key in enumerate(original_keys):
                     idx = out['sequence_idx'][i]
 
@@ -202,7 +202,11 @@ class AttendSolver():
                 for step_i in progress_wrapper(range(steps_per_epoch)):
                     # Run batch_loss summary op together with loss_op
                     # Otherwise it will recompute the loss separately
-                    loss, _, summary, keys = sess.run([loss_op, train_op, summary_op, ctx['key']])
+                    try:
+                        loss, _, summary, keys = sess.run([loss_op, train_op, summary_op, ctx['key']])
+                    # If duplicate key is encountered this could happen rarely
+                    except tf.errors.InvalidArgumentError as e:
+                        log.exception(e)
                     global_step_value = tf.train.global_step(sess, global_step)
                     log.debug('TRAIN %s - %s', global_step_value, loss)
 
