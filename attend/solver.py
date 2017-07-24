@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 from time import time
+from collections import OrderedDict
 
 
 from util import *
@@ -13,6 +14,7 @@ class AttendSolver():
 
         self.update_rule = update_rule
         self.learning_rate = learning_rate
+        self.summary_producer = None
 
         if self.update_rule == 'adam':
             self.optimizer = tf.train.AdamOptimizer
@@ -20,7 +22,7 @@ class AttendSolver():
             raise Exception()
 
     def test(self, graph, saver, save_path, provider, context_ops, loss_ops,
-            summary_writer=None):
+            summary_writer, global_step):
         # Reasons for building a new session every validation step:
         # - There is no way to keep track of epochs OR to restart queues
         #   so a new session keeps it easy to loop through the input
@@ -37,7 +39,11 @@ class AttendSolver():
 
         # These are batch losses per key
         # Might be interesting to see errors progress over time within a vid
-        losses_by_key = {}
+
+        loss_names = ['mse_reduced']
+
+        losses_by_loss_by_key = {k:OrderedDict() for k in loss_names}
+        seq_lengths_by_key = OrderedDict()
 
         try:
             for i in range(1000000000):
@@ -48,18 +54,40 @@ class AttendSolver():
                 original_keys = list(map(lambda k: str(k).split(':')[-1], out['key']))
                 for i, key in enumerate(original_keys):
                     idx = out['sequence_idx'][i]
-                    if key not in losses_by_key:
-                        count = out['sequence_count'][i]
-                        losses_by_key[key] = np.zeros(count)
-                    losses_by_key[key][idx] = out['mse_reduced'][i]
+                    for loss_name in loss_names:
+                        losses_by_key = losses_by_loss_by_key[loss_name]
+
+                        if key not in losses_by_key:
+                            count = out['sequence_count'][i]
+                            losses_by_key[key] = np.zeros(count)
+
+                        losses_by_key[key][idx] = out[loss_name][i]
+
+                        if key not in seq_lengths_by_key:
+                            seq_lengths_by_key[key] = out['length']
 
                 if coord.should_stop():
                     log.warning('Validation stopping because coord said so')
         except tf.errors.OutOfRangeError:
             log.info('Finished validation')
 
-        mean_losses = [np.mean(losses) for losses in losses_by_key.values()]
-        mean_loss = np.mean(mean_losses)
+        seq_lengths = np.array(list(seq_lengths_by_key.values()))
+
+        # Per loss, the mean loss per video
+        mean_losses_by_loss = { k: \
+                [np.mean(losses) for losses in losses_by_loss_by_key[k].values()] \
+                for k in loss_names }
+        mean_losses_norm = { k: np.array(v) / seq_lengths for k, v in mean_losses_by_loss.items() }
+        mean_by_loss = { k: np.mean(v) for k, v in mean_losses_by_loss.items() }
+
+        # First time testing, build the test summary graph
+        if self.summary_producer is None:
+            from attend import SummaryProducer
+            self.summary_producer = SummaryProducer(loss_names)
+
+        summary = self.summary_producer.write_summary(sess, mean_by_loss,
+                mean_losses_by_loss, mean_losses_norm)
+        summary_writer.add_summary(summary, global_step)
 
         # TODO threads are joined successfully but weird warnings about queues
         coord.request_stop()
@@ -197,7 +225,9 @@ class AttendSolver():
                             save_path=save_path,
                             provider=val_provider,
                             loss_ops=val_losses,
-                            context_ops=val_ctx
+                            context_ops=val_ctx,
+                            summary_writer=summary_writer,
+                            global_step = global_step_value
                             )
 
             coord.request_stop()
