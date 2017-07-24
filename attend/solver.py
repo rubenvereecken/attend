@@ -45,6 +45,8 @@ class AttendSolver():
         losses_by_loss_by_key = {k:OrderedDict() for k in loss_names}
         seq_lengths_by_key = OrderedDict()
 
+        start = time.time()
+
         try:
             for i in range(1000000000):
                 fetch = {}
@@ -70,7 +72,7 @@ class AttendSolver():
                 if coord.should_stop():
                     log.warning('Validation stopping because coord said so')
         except tf.errors.OutOfRangeError:
-            log.info('Finished validation')
+            log.info('Finished validation in %.2fs', time.time() - start)
 
         seq_lengths = np.array(list(seq_lengths_by_key.values()))
 
