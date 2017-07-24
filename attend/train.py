@@ -106,6 +106,7 @@ if __name__ == '__main__':
     all_args['encoder'] = init_with(Encoder, all_args)
     all_args['provider'] = init_with(Provider, all_args)
     if not args.val_data is None:
+        assert os.path.exists(args.val_data), "Validation data not found"
         val_args = all_args.copy()
         val_args['filenames'] = [args.val_data]
         all_args['val_provider'] = init_with(Provider, val_args)

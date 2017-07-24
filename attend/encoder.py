@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import functools
 
 from attend.log import Log; log = Log.get_logger(__name__)
 
@@ -234,7 +235,7 @@ class Encoder():
         with tf.variable_scope('encode_lstm'):
             lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.encode_hidden_units)
             x_by_time = tf.split(value=x, num_or_size_splits=self.time_steps, axis=1)
-            x_by_time = list(map(tf.squeeze, x_by_time))
+            x_by_time = list(map(lambda x: tf.squeeze(x, axis=1), x_by_time))
             # assert len(x_by_time) == self.time_steps
 
             if not state_saver is None:

@@ -1,6 +1,5 @@
 import inspect
 
-
 def pick(dic, l):
     '''
     Pick from dictionary all the keys present in a list of keywords
@@ -30,3 +29,5 @@ import contextlib
 @contextlib.contextmanager
 def noop():
     yield None
+
+
