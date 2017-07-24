@@ -143,7 +143,7 @@ class Provider():
                         num_unroll     = self.time_steps,
                         batch_size     = self.batch_size,
                         num_threads    = 2, # TODO change
-                        capacity       = self.batch_size * 1,
+                        capacity       = self.batch_size * 4,
                         name           = 'batch_seq_with_states'
                         )
                 example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]

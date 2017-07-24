@@ -92,7 +92,7 @@ class Encoder():
             D_feat = x.shape[2:].as_list()
             D_feat = np.prod(D_feat)
             # Just flatten the features if no convolutional network defined
-            return tf.reshape(x, [self.batch_size, self.time_steps, D_feat])
+            return tf.reshape(x, [-1, self.time_steps, D_feat])
         else:
             x = self._build_conv_network(x)
 

@@ -54,6 +54,10 @@ class AttendSolver():
                 original_keys = list(map(lambda k: str(k).split(':')[-1], out['key']))
                 for i, key in enumerate(original_keys):
                     idx = out['sequence_idx'][i]
+
+                    if key not in seq_lengths_by_key:
+                        seq_lengths_by_key[key] = out['length'][i]
+
                     for loss_name in loss_names:
                         losses_by_key = losses_by_loss_by_key[loss_name]
 
@@ -62,9 +66,6 @@ class AttendSolver():
                             losses_by_key[key] = np.zeros(count)
 
                         losses_by_key[key][idx] = out[loss_name][i]
-
-                        if key not in seq_lengths_by_key:
-                            seq_lengths_by_key[key] = out['length']
 
                 if coord.should_stop():
                     log.warning('Validation stopping because coord said so')
@@ -154,7 +155,7 @@ class AttendSolver():
                         tf.local_variables_initializer())
 
         # Summary op
-        tf.summary.scalar('batch_loss', loss_op)
+        tf.summary.scalar('train_batch_loss', loss_op)
         for var in tf.trainable_variables():
             tf.summary.histogram(var.op.name, var)
         # for grad, var in grads_and_vars:
@@ -236,11 +237,10 @@ class AttendSolver():
             log.info('Done training -- epoch limit reached')
             notify('Done training', 'Took {:.1f}s'.format(time() - t_start))
         except Exception as e:
-            log.critical(e)
-            raise e
+            log.exception(e)
             notify('Error occurred', 'Took {:.1f}s'.format(time() - t_start))
         finally:
-            log.debug('Finally - ...')
+            log.debug('Joining threads - ...')
             # Requests the coordinator to stop, joins threads
             # and closes the summary writer if enabled through supervisor
             coord.join(threads + input_threads)

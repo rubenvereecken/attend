@@ -216,7 +216,7 @@ class AttendModel():
 
         with tf.variable_scope(scope):
             T = tf.shape(targets)[1]
-            targets = tf.squeeze(targets) # Get rid of trailing 1-dimensions
+            targets = tf.squeeze(targets, [2]) # Get rid of trailing 1-dimensions
             # Tails of sequences are likely padded, so create a mask to ignore padding
             mask = tf.cast(tf.sequence_mask(lengths, T), tf.int32) if lengths is not None else None
             loss = self.loss_fun(targets, predictions, weights=mask, reduction='none') # B x T
