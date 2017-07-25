@@ -21,7 +21,8 @@ class Defaults:
         shuffle_splits            = False,
         shuffle_splits_capacity   = None,
 
-        stats_every = 100
+        stats_every = 100,
+        gen_log_dir = True
     )
 
     debug_params = dict(

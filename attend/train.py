@@ -61,23 +61,49 @@ if __name__ == '__main__':
     parser.add_argument('--val_batch_size', type=int)
     parser.add_argument('--steps_per_epoch', type=int)
     parser.add_argument('--num_epochs', type=int)
+    # parser.add_argument('--encode_lstm', action='store_true')
+    # parser.add_argument('--no_encode_lstm', dest='encode_lstm', action='store_false')
     parser.add_argument('--encode_hidden_units', type=int)
     parser.add_argument('--time_steps', type=int)
     parser.add_argument('--conv_impl', type=str)
     parser.add_argument('--attention_impl', type=str)
     parser.add_argument('--shuffle_examples_capacity', type=int)
-    parser.add_argument('--no_shuffle_examples', dest='shuffle_examples', action='store_false')
+    # parser.add_argument('--shuffle_examples', action='store_true')
+    # parser.add_argument('--no_shuffle_examples', dest='shuffle_examples', action='store_false')
+    # parser.add_argument('--gen_log_dir', )
+
+    def _boolean_argument(name, default=None):
+        parser.add_argument('--{}'.format(name), dest=name, action='store_true')
+        parser.add_argument('--no_{}'.format(name), dest=name, action='store_false')
+        parser.set_defaults(**{name: default})
+
+    _boolean_argument('encode_lstm')
+    _boolean_argument('shuffle_examples')
 
     # Not ideal but need to know if debug before things start
     debug = '--debug' in sys.argv
     defaults = Defaults(debug)
 
-    parser.set_defaults(
-            gen_log_dir=True, debug=False,
-            **{k: v for k, v in defaults.__dict__.items() if not k.startswith('__')}
-            )
+    # parser.set_defaults(
+    #         gen_log_dir=True, debug=False,
+    #         **{k: v for k, v in defaults.__dict__.items() if not k.startswith('__')}
+    #         )
 
     args = parser.parse_args()
+
+    # Process while defaults not set yet
+    if args.shuffle_examples is None and not args.shuffle_examples_capacity is None:
+        raise ValueError('Shuffle capacity given without --shuffle_examples')
+    if args.encode_lstm is None and not args.encode_hidden_units is None:
+        raise ValueError('Encode hidden units given without --encode_lstm')
+
+    print(args.encode_hidden_units)
+    d = defaults.__dict__.copy()
+    d.update({ k: v for (k, v) in args.__dict__.items() if v is not None})
+    args.__dict__.update(d)
+    # args.__dict__.update(defaults.__dict__)
+    args.debug = debug
+    print(args.encode_hidden_units)
 
     if args.gen_log_dir:
         args.log_dir = _gen_log_dir(args.log_dir, args.prefix)
