@@ -126,7 +126,7 @@ class AttendSolver():
 
         # Prediction and loss
         with tf.variable_scope(tf.get_variable_scope()):
-            outputs, ctx = self.model.build_model(provider, train=True)
+            outputs, ctx = self.model.build_model(provider, True)
             loss_op = self.model.calculate_loss(outputs, provider.targets, ctx['length'])
 
         if not val_provider is None:
@@ -134,7 +134,7 @@ class AttendSolver():
                     collection=attend.GraphKeys.VAL_INPUT_RUNNERS)
             with tf.variable_scope(tf.get_variable_scope(), reuse=True):
                 # tf.get_variable_scope().reuse_variables()
-                val_outputs, val_ctx = self.model.build_model(val_provider, train=False)
+                val_outputs, val_ctx = self.model.build_model(val_provider, False)
                 val_losses = self.model.calculate_losses(val_outputs,
                         val_provider.targets, val_ctx['length'], 'val_loss')
 

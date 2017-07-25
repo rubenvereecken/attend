@@ -8,7 +8,11 @@ class AttendModel():
     # ALLOWED_ATTN_IMPLS = ['attention']
 
 
-    def __init__(self, provider, encoder, num_hidden=512, loss_fun='mse', time_steps=None, attention_impl=None, debug=True):
+    def __init__(self, provider, encoder, num_hidden=512, loss_fun='mse',
+            time_steps=None, attention_impl=None,
+            dropout=None,
+            use_dropout=True,
+            debug=True):
         """
 
         Arguments:
@@ -25,6 +29,8 @@ class AttendModel():
         self.dim_feature = provider.dim_feature
         self.D = np.prod(self.dim_feature) # Feature dimension when flattened
         self.H = num_hidden
+        self.dropout = dropout
+        self.use_dropout_for_training = use_dropout
 
         # If None, it's variable, if an int, it's known. Can also be Tensor
         self.T = time_steps
@@ -46,7 +52,7 @@ class AttendModel():
         elif attention_impl is None or attention_impl == 'none':
             self.attention_layer = None
         else:
-            raise Exception('Invalid attention impl {}'.format(attention_impl))
+            raise ValueError('Invalid attention impl {}'.format(attention_impl))
 
         self.debug = debug
 
@@ -78,7 +84,7 @@ class AttendModel():
             return context, alpha
 
 
-    def build_model(self, provider, train=True):
+    def build_model(self, provider, is_training=True):
         """Build the entire model
 
         Args:
@@ -88,12 +94,18 @@ class AttendModel():
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
 
-        # # TODO remove
-        # W = tf.get_variable('W_tmp', [np.prod(np.array(provider.dim_feature)), 1])
-        # outputs = tf.einsum('ijk,kl->ijl', features, W)
-        # loss = self.loss_fun(targets, outputs)
-        # loss = tf.Print(loss, [loss], message='loss ')
-        # return loss
+        use_dropout = is_training and self.use_dropout_for_training
+        if is_training:
+            log.debug('=== TRAINING ===')
+        else:
+            log.debug('=== VALIDATION ===')
+        if use_dropout:
+            log.debug('Using dropout %s', self.dropout)
+        else:
+            log.debug('NO dropout used')
+
+        if use_dropout and self.dropout in [1, None]:
+            raise ValueError('Bad dropout value %s', self.dropout)
 
         T = self.T if not self.T is None else tf.shape(features[1])
 
@@ -106,7 +118,7 @@ class AttendModel():
             # if self.debug:
             #     x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
 
-        x = self.encoder(x, state_saver)
+        x = self.encoder(x, state_saver, use_dropout)
         log.debug('encoded shape %s', x.shape)
 
         # TODO consider projecting features x
@@ -118,7 +130,6 @@ class AttendModel():
         else:
             c, h = self._initial_lstm(x)
 
-        # TODO that other implementation projects the features first
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
 
         outputs = []
@@ -130,7 +141,7 @@ class AttendModel():
                 if t == 0:
                     # Fill with null values first go because there is no previous
                     true_prev_target = tf.zeros([batch_size, 1]) # T x 1
-                elif train:
+                elif is_training:
                     # Feed back in last true input
                     true_prev_target = targets[:, t-1]
                 else:

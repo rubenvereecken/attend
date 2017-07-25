@@ -10,10 +10,14 @@ class Defaults:
         num_hidden                = 512,
         conv_impl                 = 'none',
         encode_lstm               = True,
-        encode_hidden_units       = 512,
-        dense_layer               = 1,
+        encode_hidden_units       = 256,
+        # dense_layer               = 1,
+        dense_spec = '-,relu',
 
         update_rule               = 'adam',
+
+        use_dropout = True,
+        dropout = .75,
 
         shuffle_examples          = True,
         shuffle_examples_capacity = None,

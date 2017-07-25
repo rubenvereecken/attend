@@ -61,16 +61,12 @@ if __name__ == '__main__':
     parser.add_argument('--val_batch_size', type=int)
     parser.add_argument('--steps_per_epoch', type=int)
     parser.add_argument('--num_epochs', type=int)
-    # parser.add_argument('--encode_lstm', action='store_true')
-    # parser.add_argument('--no_encode_lstm', dest='encode_lstm', action='store_false')
-    parser.add_argument('--encode_hidden_units', type=int)
     parser.add_argument('--time_steps', type=int)
     parser.add_argument('--conv_impl', type=str)
     parser.add_argument('--attention_impl', type=str)
+    parser.add_argument('--encode_hidden_units', type=int)
     parser.add_argument('--shuffle_examples_capacity', type=int)
-    # parser.add_argument('--shuffle_examples', action='store_true')
-    # parser.add_argument('--no_shuffle_examples', dest='shuffle_examples', action='store_false')
-    # parser.add_argument('--gen_log_dir', )
+    parser.add_argument('--dense_spec', type=str)
 
     def _boolean_argument(name, default=None):
         parser.add_argument('--{}'.format(name), dest=name, action='store_true')
@@ -79,6 +75,10 @@ if __name__ == '__main__':
 
     _boolean_argument('encode_lstm')
     _boolean_argument('shuffle_examples')
+    _boolean_argument('use_dropout')
+
+    parser.add_argument('--dropout', type=float)
+    # parser.add_argument('--dropout', type=float)
 
     # Not ideal but need to know if debug before things start
     debug = '--debug' in sys.argv
@@ -89,6 +89,7 @@ if __name__ == '__main__':
     #         **{k: v for k, v in defaults.__dict__.items() if not k.startswith('__')}
     #         )
 
+    d = defaults.__dict__.copy()
     args = parser.parse_args()
 
     # Process while defaults not set yet
@@ -97,13 +98,9 @@ if __name__ == '__main__':
     if args.encode_lstm is None and not args.encode_hidden_units is None:
         raise ValueError('Encode hidden units given without --encode_lstm')
 
-    print(args.encode_hidden_units)
-    d = defaults.__dict__.copy()
     d.update({ k: v for (k, v) in args.__dict__.items() if v is not None})
     args.__dict__.update(d)
-    # args.__dict__.update(defaults.__dict__)
     args.debug = debug
-    print(args.encode_hidden_units)
 
     if args.gen_log_dir:
         args.log_dir = _gen_log_dir(args.log_dir, args.prefix)

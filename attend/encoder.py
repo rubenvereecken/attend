@@ -6,9 +6,12 @@ from attend.log import Log; log = Log.get_logger(__name__)
 
 class Encoder():
     ALLOWED_CONV_IMPLS = ['small', 'convnet', 'resnet', 'vggface', 'none']
+    ACTIVATIONS = dict(relu=tf.nn.relu)
 
     def __init__(self, batch_size, encode_hidden_units=0, time_steps=None,
-                 debug=True, conv_impl=None, dense_layer=0):
+                 debug=True, conv_impl=None, dense_layer=0, dropout=.75,
+                 dense_spec=None
+                 ):
         self.debug = debug
         self.encode_lstm = encode_hidden_units > 0
         self.batch_size = batch_size # TODO this will go
@@ -22,27 +25,30 @@ class Encoder():
         else:
             self.conv_impl = conv_impl
 
-
         if encode_hidden_units: assert not time_steps is None, 'need time steps for encode lstm'
         self.encode_hidden_units = encode_hidden_units
         self.dense_layer         = dense_layer
+        self.dense_spec = dense_spec
         self.time_steps          = time_steps
         self.T                   = time_steps
+        self.dropout             = dropout
 
-        # Maybe look into this one
-        # self.weight_initializer = tf.random_normal
+        # TODO check more thoroughly
         self.weight_initializer = tf.contrib.layers.xavier_initializer()
-        self.const_initializer = tf.constant_initializer(0.0)
+        self.const_initializer  = tf.constant_initializer(0.0)
 
 
-    def __call__(self, x, state_saver=None):
+    def __call__(self, x, state_saver=None, use_dropout=True):
         with tf.variable_scope('encoder'):
             x = self.conv_network(x)
             if self.dense_layer:
                 log.debug('Using a dense layer in the encoder')
-                x = self.dense(x)
+                x = self.dense(x, use_dropout)
+            elif self.dense_spec:
+                log.debug('Building dense from spec `%s`', self.dense_spec)
+                x = self.dense_from_spec(x, self.dense_spec, use_dropout)
             if self.encode_hidden_units > 0:
-                x = self._encode_lstm(x, state_saver)
+                x = self._encode_lstm(x, state_saver, use_dropout)
             return x
 
 
@@ -58,15 +64,50 @@ class Encoder():
                 log.debug('Encoder output shape %s', conv_out.shape)
                 return conv_out.shape.as_list()[2:]
 
-    def dense(self, x):
+
+    def dense(self, x, use_dropout=True):
         # Expect flattened
         x.shape.assert_has_rank(3)
         D = x.shape[2]
 
         with tf.variable_scope('encode_dense'):
-            W = tf.get_variable('W', [D, D], initializer=self.weight_initializer)
-            b = tf.get_variable('b', [D], initializer=self.const_initializer)
-            x = tf.einsum('ijk,kl->ijl', x, W) + b
+            x = tf.layers.dense(x, D, activation=tf.nn.relu,
+                    kernel_initializer=self.weight_initializer,
+                    name='dense')
+
+            if use_dropout:
+                x = tf.nn.dropout(x, self.dropout)
+
+                # NOTE I'm not sure if maxnorm clipping doesn't blow it up
+                # in case of null-states (like padded sequence tails)
+                # because I don't care about those but we don't mask
+                # TODO value 3 is from the original dropout paper I believe
+            x = tf.clip_by_norm(x, 3)
+
+        return x
+
+
+    def dense_from_spec(self, x, fullspec, use_dropout=True):
+        specs = fullspec.split(':')
+
+        n = 0
+        sizes = []
+        for spec in specs:
+            n += 1
+            bits = spec.split(',')
+            size = x.shape[-1] if bits[0] == '-' else int(bits[0])
+            sizes.append(size)
+            activation = Encoder.ACTIVATIONS[bits[1]] if bits[1] else None
+
+            x = tf.layers.dense(x, size, activation=activation,
+                    kernel_initializer=self.weight_initializer,
+                    name='dense_{}'.format(n))
+            if use_dropout:
+                x = tf.nn.dropout(x, self.dropout, name='dropout_{}'.format(n))
+
+            x = tf.clip_by_norm(x, 3, name='dropout_{}'.format(n))
+
+        log.debug('Built %s dense layers sizes %s', n, sizes)
 
         return x
 
@@ -229,7 +270,7 @@ class Encoder():
         return x
 
 
-    def _encode_lstm(self, x, state_saver=None):
+    def _encode_lstm(self, x, state_saver=None, use_dropout=True):
         from attend.provider import Provider
 
         with tf.variable_scope('encode_lstm'):
