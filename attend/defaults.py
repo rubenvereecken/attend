@@ -19,7 +19,9 @@ class Defaults:
         shuffle_examples_capacity = None,
 
         shuffle_splits            = False,
-        shuffle_splits_capacity   = None
+        shuffle_splits_capacity   = None,
+
+        stats_every = 100
     )
 
     debug_params = dict(

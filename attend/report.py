@@ -1,6 +1,8 @@
 import tensorflow as tf
 import numpy as np
 
+from time import time
+
 import attend
 
 class SummaryProducer:
@@ -11,8 +13,17 @@ class SummaryProducer:
         self.mean_losses = { k: tf.placeholder(tf.float32, ()) for k in self.loss_names }
         self.mean_hists = { k: tf.placeholder(tf.float32, (None)) for k in self.loss_names }
         self.mean_hists_norm = { k: tf.placeholder(tf.float32, (None)) for k in self.loss_names }
-
         self.summary_op = self.build_summary_op()
+
+        self.last_step = 0
+        self.steps_per_second = tf.placeholder(tf.float32, ())
+        self.mem_usage = tf.placeholder(tf.float32, ())
+        self.stats_op = self.build_stats_op()
+
+        import os
+        import psutil
+        self.process = psutil.Process(os.getpid())
+
 
     def mean_scalar(self):
         mean_summaries = [ tf.summary.scalar(loss_name + '/mean',
@@ -36,15 +47,19 @@ class SummaryProducer:
         return mean_hists + mean_hists_norm
 
     def build_summary_op(self):
+        start = time()
         mean_scalars = self.mean_scalar()
         mean_hists = self.mean_hist()
         all_summaries = mean_scalars + mean_hists
 
         summary_op = tf.summary.merge(all_summaries)
+        # self.summary_op = summary_op
+        from attend.log import Log; log = Log.get_logger(__name__)
+        log.debug('Built summary test summary op in %.3f s', time() - start)
 
         return summary_op
 
-    def write_summary(self, sess, mean_loss, mean_by_seq, mean_by_seq_norm):
+    def create_loss_summary(self, sess, mean_loss, mean_by_seq, mean_by_seq_norm):
         feed_dict = {}
 
         for k, v in mean_loss.items():
@@ -57,4 +72,35 @@ class SummaryProducer:
             feed_dict[self.mean_hists_norm[k]] = v
 
         summary = sess.run(self.summary_op, feed_dict=feed_dict)
+        return summary
+
+
+    def build_stats_op(self):
+        scalars = [
+                tf.summary.scalar('steps_per_second',
+                    self.steps_per_second,
+                    collections=attend.GraphKeys.STATS_SUMMARIES,
+                    family='train'),
+                tf.summary.scalar('mem_usage',
+                    self.mem_usage,
+                    collections=attend.GraphKeys.STATS_SUMMARIES,
+                    family='train')
+                ]
+        summary_op = tf.summary.merge(scalars)
+        return summary_op
+
+
+    def create_stats_summary(self, sess, elapsed, global_step):
+        steps = global_step - self.last_step
+        steps_per_second = steps / elapsed
+
+        mem_usage = self.process.memory_info().rss
+        mem_usage *= 1e-6
+
+        feed_dict = {
+                self.steps_per_second: steps_per_second,
+                self.mem_usage: mem_usage,
+                }
+        summary = sess.run(self.stats_op, feed_dict=feed_dict)
+        self.last_step = global_step
         return summary

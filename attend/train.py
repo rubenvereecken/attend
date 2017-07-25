@@ -123,12 +123,6 @@ if __name__ == '__main__':
         val_args['batch_size'] = all_args['val_batch_size']
         all_args['val_provider'] = init_with(Provider, val_args)
     all_args['model'] = AttendModel(**pick(all_args, params_for(AttendModel.__init__)))
-    # all_args['model'] = AttendModel()
-    model = all_args['model']
 
-    # The actual training bit
-    # solver = AttendSolver(**pick(all_args, list(inspect.signature(AttendSolver.__init__).parameters)))
-    solver = AttendSolver(model, update_rule='adam', learning_rate=0.01)
+    solver = init_with(AttendSolver, all_args)
     solver.train(**pick(all_args, list(inspect.signature(solver.train).parameters)))
-    # print(pick(all_args, list(inspect.signature(solver.train).parameters)))
-    # solver.train(args.data_file, 20, 1, log_dir=args.log_dir)

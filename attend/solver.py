@@ -9,7 +9,7 @@ from attend.log import Log; log = Log.get_logger(__name__)
 import attend
 
 class AttendSolver():
-    def __init__(self, model, update_rule, learning_rate):
+    def __init__(self, model, update_rule, learning_rate, stats_every):
         self.model = model
 
         self.update_rule = update_rule
@@ -20,6 +20,12 @@ class AttendSolver():
             self.optimizer = tf.train.AdamOptimizer
         else:
             raise Exception()
+
+        self.loss_names = ['mse_reduced']
+        from attend import SummaryProducer
+        self.summary_producer = SummaryProducer(self.loss_names)
+
+        self.stats_every = stats_every
 
     def test(self, graph, saver, save_path, provider, context_ops, loss_ops,
             summary_writer, global_step):
@@ -38,10 +44,7 @@ class AttendSolver():
         saver.restore(sess, save_path)
 
         # These are batch losses per key
-        # Might be interesting to see errors progress over time within a vid
-
-        loss_names = ['mse_reduced']
-
+        loss_names = self.loss_names # TODO
         losses_by_loss_by_key = {k:OrderedDict() for k in loss_names}
         seq_lengths_by_key = OrderedDict()
 
@@ -84,11 +87,9 @@ class AttendSolver():
         mean_by_loss = { k: np.mean(v) for k, v in mean_losses_by_loss.items() }
 
         # First time testing, build the test summary graph
-        if self.summary_producer is None:
-            from attend import SummaryProducer
-            self.summary_producer = SummaryProducer(loss_names)
+        # TODO maybe remove
 
-        summary = self.summary_producer.write_summary(sess, mean_by_loss,
+        summary = self.summary_producer.create_loss_summary(sess, mean_by_loss,
                 mean_losses_by_loss, mean_losses_norm)
         summary_writer.add_summary(summary, global_step)
 
@@ -157,7 +158,7 @@ class AttendSolver():
                         tf.local_variables_initializer())
 
         # Summary op
-        tf.summary.scalar('train_batch_loss', loss_op)
+        tf.summary.scalar('batch_loss', loss_op, family='train')
         for var in tf.trainable_variables():
             tf.summary.histogram(var.op.name, var)
         # for grad, var in grads_and_vars:
@@ -200,11 +201,13 @@ class AttendSolver():
 
         try:
             # while not coord.should_stop():
-            for epoch_i in progress_wrapper(range(num_epochs)):
-                for step_i in progress_wrapper(range(steps_per_epoch)):
-                    # Run batch_loss summary op together with loss_op
-                    # Otherwise it will recompute the loss separately
+            for epoch_i in progress_wrapper(range(1, num_epochs + 1)):
+                for step_i in progress_wrapper(range(1, steps_per_epoch + 1)):
+                    if (step_i - 1) % self.stats_every == 0:
+                        t_stats = time()
                     try:
+                        # Run batch_loss summary op together with loss_op
+                        # Otherwise it will recompute the loss separately
                         loss, _, summary, keys = sess.run([loss_op, train_op, summary_op, ctx['key']])
                     # If duplicate key is encountered this could happen rarely
                     except tf.errors.InvalidArgumentError as e:
@@ -213,6 +216,13 @@ class AttendSolver():
                     log.debug('TRAIN %s - %s', global_step_value, loss)
 
                     summary_writer.add_summary(summary, global_step_value)
+
+                    # Runtime stats every so often
+                    if step_i % self.stats_every == 0:
+                        stats_summary = self.summary_producer.create_stats_summary(
+                                sess, time() - t_stats, global_step_value)
+                        summary_writer.add_summary(stats_summary, global_step_value)
+
 
                     if coord.should_stop():
                         break
