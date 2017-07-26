@@ -40,6 +40,7 @@ class Runner:
         _boolean_argument('encode_lstm')
         _boolean_argument('shuffle_examples')
         _boolean_argument('use_dropout')
+        _boolean_argument('use_maxnorm')
 
         parser.add_argument('--dropout', type=float)
 

@@ -10,6 +10,7 @@ class Encoder():
 
     def __init__(self, batch_size, encode_hidden_units=0, time_steps=None,
                  debug=True, conv_impl=None, dense_layer=0, dropout=.75,
+                 use_maxnorm=True,
                  dense_spec=None
                  ):
         self.debug = debug
@@ -32,6 +33,7 @@ class Encoder():
         self.time_steps          = time_steps
         self.T                   = time_steps
         self.dropout             = dropout
+        self.use_maxnorm = use_maxnorm
 
         # TODO check more thoroughly
         self.weight_initializer = tf.contrib.layers.xavier_initializer()
@@ -82,7 +84,8 @@ class Encoder():
                 # in case of null-states (like padded sequence tails)
                 # because I don't care about those but we don't mask
                 # TODO value 3 is from the original dropout paper I believe
-            x = tf.clip_by_norm(x, 3)
+            if self.use_maxnorm:
+                x = tf.clip_by_norm(x, 3)
 
         return x
 
@@ -105,7 +108,8 @@ class Encoder():
             if use_dropout:
                 x = tf.nn.dropout(x, self.dropout, name='dropout_{}'.format(n))
 
-            x = tf.clip_by_norm(x, 3, name='dropout_{}'.format(n))
+            if self.use_maxnorm:
+                x = tf.clip_by_norm(x, 3, name='dropout_{}'.format(n))
 
         log.debug('Built %s dense layers sizes %s', n, sizes)
 
