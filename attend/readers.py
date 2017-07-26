@@ -148,7 +148,6 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
     with tf.variable_scope('read_tfrecords'):
         reader = tf.TFRecordReader()
         _, serialized_example = reader.read(filename_q)
-        # https://github.com/tensorflow/tensorflow/issues/976
         # http://www.wildml.com/2016/08/rnns-in-tensorflow-a-practical-guide-and-undocumented-features/
         context, feature_lists = tf.parse_single_sequence_example(
                 serialized_example,

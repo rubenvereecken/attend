@@ -47,7 +47,6 @@ def _save_pid(log_dir):
         f.write(str(os.getpid()))
 
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', dest='data_file', required=True)

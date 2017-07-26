@@ -24,16 +24,14 @@ class AttendSolver():
         self.loss_names = ['mse_reduced']
         from attend import SummaryProducer
         self.summary_producer = SummaryProducer(self.loss_names)
-
         self.stats_every = stats_every
 
-    def test(self, graph, saver, save_path, provider, context_ops, loss_ops,
+
+    def test(self, graph, saver, save_path, provider, init_op, context_ops, loss_ops,
             summary_writer, global_step):
         # Reasons for building a new session every validation step:
         # - There is no way to keep track of epochs OR to restart queues
         #   so a new session keeps it easy to loop through the input
-        init_op = tf.group(tf.global_variables_initializer(),
-                           tf.local_variables_initializer())
         sess = tf.Session(graph=graph)
         sess.run(init_op)
         coord = tf.train.Coordinator()
@@ -97,7 +95,6 @@ class AttendSolver():
         coord.request_stop()
         coord.join(threads)
         sess.close()
-
 
 
     def train(self, num_epochs, steps_per_epoch, batch_size, time_steps,
@@ -196,6 +193,8 @@ class AttendSolver():
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
 
+        g.finalize() # No ops can be added after this
+
         t_start = time()
         log.info('Started training')
 
@@ -241,6 +240,7 @@ class AttendSolver():
                             graph=g, saver=saver,
                             save_path=save_path,
                             provider=val_provider,
+                            init_op=init_op,
                             loss_ops=val_losses,
                             context_ops=val_ctx,
                             summary_writer=summary_writer,
