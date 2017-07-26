@@ -197,17 +197,20 @@ class AttendSolver():
 
         t_start = time()
         log.info('Started training')
+        losses = np.empty(self.stats_every) # Keep losses to average every so often
+        global_step_value = 0
 
         try:
             # while not coord.should_stop():
-            for epoch_i in progress_wrapper(range(1, num_epochs + 1)):
-                for step_i in progress_wrapper(range(1, steps_per_epoch + 1)):
-                    if (step_i - 1) % self.stats_every == 0:
+            for epoch_i in progress_wrapper(range(num_epochs)):
+                for step_i in progress_wrapper(range(steps_per_epoch)):
+                    if (global_step_value) % self.stats_every == 0:
                         t_stats = time()
                     try:
                         # Run batch_loss summary op together with loss_op
                         # Otherwise it will recompute the loss separately
                         loss, _, summary, keys = sess.run([loss_op, train_op, summary_op, ctx['key']])
+                        losses[step_i % self.stats_every] = loss # Circular buffer
                     # If duplicate key is encountered this could happen rarely
                     except tf.errors.InvalidArgumentError as e:
                         log.exception(e)
@@ -217,9 +220,10 @@ class AttendSolver():
                     summary_writer.add_summary(summary, global_step_value)
 
                     # Runtime stats every so often
-                    if step_i % self.stats_every == 0:
+                    if global_step_value % self.stats_every == 0:
                         stats_summary = self.summary_producer.create_stats_summary(
-                                sess, time() - t_stats, global_step_value)
+                                sess, time() - t_stats, global_step_value,
+                                np.mean(losses))
                         summary_writer.add_summary(stats_summary, global_step_value)
 
 

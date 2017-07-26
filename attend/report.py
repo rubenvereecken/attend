@@ -18,12 +18,12 @@ class SummaryProducer:
         self.last_step = 0
         self.steps_per_second = tf.placeholder(tf.float32, ())
         self.mem_usage = tf.placeholder(tf.float32, ())
+        self.mean_train_loss = tf.placeholder(tf.float32, ())
         self.stats_op = self.build_stats_op()
 
         import os
         import psutil
         self.process = psutil.Process(os.getpid())
-
 
     def mean_scalar(self):
         mean_summaries = [ tf.summary.scalar(loss_name + '/mean',
@@ -84,13 +84,17 @@ class SummaryProducer:
                 tf.summary.scalar('mem_usage',
                     self.mem_usage,
                     collections=attend.GraphKeys.STATS_SUMMARIES,
+                    family='train'),
+                tf.summary.scalar('mean_loss',
+                    self.mean_train_loss,
+                    collections=attend.GraphKeys.STATS_SUMMARIES,
                     family='train')
                 ]
         summary_op = tf.summary.merge(scalars)
         return summary_op
 
 
-    def create_stats_summary(self, sess, elapsed, global_step):
+    def create_stats_summary(self, sess, elapsed, global_step, mean_loss):
         steps = global_step - self.last_step
         steps_per_second = steps / elapsed
 
@@ -100,6 +104,7 @@ class SummaryProducer:
         feed_dict = {
                 self.steps_per_second: steps_per_second,
                 self.mem_usage: mem_usage,
+                self.mean_train_loss: mean_loss,
                 }
         summary = sess.run(self.stats_op, feed_dict=feed_dict)
         self.last_step = global_step
