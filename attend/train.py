@@ -20,11 +20,12 @@ def _save_pid(log_dir):
 if __name__ == '__main__':
     runner = attend.Runner()
     runner.parse_args_and_setup()
-    # runner.setup_log() # Needs log directory from args
     runner.save_interesting_things()
 
     all_args = runner.args.__dict__.copy()
 
+    from attend.log import Log
+    log = Log.get_logger(__name__)
     if not all_args['debug']:
         log.info('NOT running in debug mode!')
 
