@@ -55,3 +55,11 @@ class Log:
         file_path = cls.log_dir + '/{}.cson'.format(file_name)
         with open(file_path, 'w') as f:
             cson.dump(dict(os.environ.items()), f, sort_keys=True, indent=4)
+
+    @classmethod
+    def save_git_version(cls, file_name='gitversion'):
+        import subprocess
+        sha = subprocess.check_output(['git', 'describe', '--always'])
+        file_path = cls.log_dir + '/{}'.format(file_name)
+        with open(file_path, 'w') as f:
+            f.write(str(sha))

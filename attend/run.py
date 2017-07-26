@@ -86,6 +86,7 @@ class Runner:
         Log.save_args(self.args)
         Log.save_pid()
         Log.save_env()
+        Log.save_git_version()
 
 
     def _gen_log_dir(self, base_dir, prefix=''):
