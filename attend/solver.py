@@ -127,6 +127,8 @@ class AttendSolver():
             loss_op = self.model.calculate_loss(outputs, provider.targets, ctx['length'])
 
         if not val_provider is None:
+            n_vars = len(tf.trainable_variables())
+
             val_provider.batch_sequences_with_states(1,
                     collection=attend.GraphKeys.VAL_INPUT_RUNNERS)
             with tf.variable_scope(tf.get_variable_scope(), reuse=True):
@@ -134,6 +136,11 @@ class AttendSolver():
                 val_outputs, val_ctx = self.model.build_model(val_provider, False)
                 val_losses = self.model.calculate_losses(val_outputs,
                         val_provider.targets, val_ctx['length'], 'val_loss')
+
+            if debug:
+                assert n_vars == len(tf.trainable_variables()), 'New vars were created for val'
+
+
 
         with tf.variable_scope('optimizer', reuse=False):
             optimizer = self.optimizer(learning_rate=self.learning_rate)
