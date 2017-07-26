@@ -1,3 +1,4 @@
 simplejson
+cson
 h5py
 tqdm
