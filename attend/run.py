@@ -31,6 +31,7 @@ class Runner:
         parser.add_argument('--encode_hidden_units', type=int)
         parser.add_argument('--shuffle_examples_capacity', type=int)
         parser.add_argument('--dense_spec', type=str)
+        parser.add_argument('--learning_rate', type=float)
 
         def _boolean_argument(name, default=None):
             parser.add_argument('--{}'.format(name), dest=name, action='store_true')

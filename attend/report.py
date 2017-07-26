@@ -6,7 +6,6 @@ from time import time
 import attend
 
 class SummaryProducer:
-
     def __init__(self, loss_names):
         self.loss_names = loss_names
 
