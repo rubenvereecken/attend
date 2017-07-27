@@ -54,6 +54,9 @@ class AttendSolver():
                 fetch.update(context_ops)
                 fetch.update(loss_ops)
                 out = sess.run(fetch)
+                print(out['batch_mse'])
+                import pdb
+                pdb.set_trace()
                 keys = list(map(lambda x: x.decode(), out['key']))
                 # original_keys = list(map(lambda k: (str(k).split(':')[1]), out['key']))
                 for i, key in enumerate(keys):
@@ -136,7 +139,7 @@ class AttendSolver():
                 # tf.get_variable_scope().reuse_variables()
                 val_outputs, val_ctx = self.model.build_model(val_provider, False)
                 val_losses = self.model.calculate_losses(val_outputs,
-                        val_provider.targets, val_ctx['length'], 'val_loss')
+                        val_provider.targets, val_ctx['key'], val_ctx['length'], 'val_loss')
 
             if debug:
                 assert n_vars == len(tf.trainable_variables()), 'New vars were created for val'

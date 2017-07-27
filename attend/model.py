@@ -189,24 +189,25 @@ class AttendModel():
             lengths = state_saver.length
             outputs = tf.identity(outputs) # Tricksy way of injecting dependency
 
-        # Is sparse for some annoying reason
-
-        # Assume key looks like 'seqn:original_key:random', so 3 splits
-        splits = tf.string_split(state_saver.key, ':')
-        splits = tf.reshape(splits.values, ([-1,3])) # Reshape per key
-        splits = splits[:,1:] # Drop the sequence info
-        keys = tf.map_fn(lambda x: tf.string_join(tf.unstack(x), ':'), splits)
-
         context = {
                 'length': lengths,
                 'sequence_idx': state_saver.sequence,
                 'sequence_count': state_saver.sequence_count,
                 # 'original_key': original_keys,
                 # 'key': state_saver.key,
-                'key': keys,
+                'key': self._extract_keys(state_saver.key),
                 }
 
         return outputs, context
+
+
+    def _extract_keys(self, keys):
+        # Assume key looks like 'seqn:original_key:random', so 3 splits
+        splits = tf.string_split(keys, ':')
+        splits = tf.reshape(splits.values, ([-1,3])) # Reshape per key
+        splits = splits[:,1:] # Drop the sequence info
+        keys = tf.map_fn(lambda x: tf.string_join(tf.unstack(x), ':'), splits)
+        return keys
 
 
     def calculate_loss(self, predictions, targets, lengths=None):
@@ -224,8 +225,92 @@ class AttendModel():
 
 
     # It's important to have losses per entire sequence
-    def calculate_losses(self, predictions, targets, lengths=None, scope='loss'):
-        losses = {}
+    def calculate_losses(self, predictions, targets, keys, lengths=None, scope='loss'):
+        with tf.variable_scope(scope):
+            losses_by_key = {
+                    'mse': tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
+                        value_dtype=tf.float32, default_value=-1)
+                    }
+            update_ops = {
+                    'mse': tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
+                        value_dtype=tf.float32, default_value=-1)
+                    }
+            pred_holders = tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
+                        value_dtype=tf.float32, default_value=-1)
+            target_holders = tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
+                        value_dtype=tf.float32, default_value=-1)
+
+            shape = tf.shape(predictions)
+            B, T = shape[0], shape[1]
+            # TODOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+            T = 100
+
+            meh = 0
+
+            def _loopbody(i):
+                key = keys[i]
+                this_key = tf.stack([key])
+                prediction = predictions[i]
+                target = targets[i]
+                exists = tf.equal(losses_by_key['mse'].lookup(key), -1)
+                # :(
+
+                def _if_not_exists():
+                    empty_var = np.zeros(T, dtype=np.float32)
+                    insert_pred = pred_holders.insert(this_key,
+                            tf.stack([tf.Variable(empty_var, trainable=False)]))
+                    insert_target = target_holders.insert(this_key,
+                            tf.stack([tf.Variable(empty_var, trainable=False)]))
+                    insert_new = tf.group(insert_pred, insert_target)
+
+                    # pred_holder = pred_holders.lookup(key)
+                    # target_holder = target_holders.lookup(key)
+                    # assign_pred = tf.assign(pred_holder, prediction)
+                    # assign_target = tf.assign(target_holder, target)
+                    # assign_new = tf.group(assign_pred, assign_target)
+
+                    with tf.control_dependencies([insert_new]):
+                        loss, update_loss = tf.contrib.metrics.streaming_mean_squared_error(
+                                prediction, target, name='mse')
+                        insert_loss = losses_by_key['mse'].insert(this_key, tf.stack([loss]))
+                        insert_update = update_ops['mse'].insert(this_key,
+                                tf.stack([update_loss]))
+
+                        with tf.control_dependencies([insert_loss, insert_update]):
+                            return tf.identity(i)
+
+                def _if_exists():
+                    return tf.identity(i)
+
+
+                i = tf.cond(exists, true_fn=_if_exists, false_fn=_if_not_exists)
+
+                # def _if_exists():
+                pred_holder = pred_holders.lookup(key)
+                target_holder = target_holders.lookup(key)
+                # assign_pred = tf.assign(pred_holder, prediction)
+                # assign_target = tf.assign(target_holder, target)
+                # assign_new = tf.group(assign_pred, assign_target)
+                assign_new = tf.group()
+
+                update_op = update_ops['mse'].lookup(this_key)
+
+                with tf.control_dependencies([assign_new, update_op]):
+                    return tf.identity(i)
+
+            i = tf.constant(0)
+            c = lambda i: tf.less(i, B)
+            inc = lambda i: tf.add(i, 1)
+            print(tf.less(i, B))
+            loop = tf.while_loop(
+                    lambda i: tf.less(i, B),
+                    lambda i: _loopbody(i) + 1,
+                    [i])
+
+            with tf.control_dependencies([loop]):
+                return {'batch_mse': losses_by_key['mse'].lookup(keys) }
+                        # 'mse': losses_by_key['mse']}
+
 
         with tf.variable_scope(scope):
             T = tf.shape(targets)[1]
