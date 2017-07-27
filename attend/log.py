@@ -63,3 +63,11 @@ class Log:
         file_path = cls.log_dir + '/{}'.format(file_name)
         with open(file_path, 'w') as f:
             f.write(str(sha))
+
+    @classmethod
+    def save_hostname(cls, file_name='host'):
+        import socket
+        hostname = socket.gethostname()
+        file_path = cls.log_dir + '/{}'.format(hostname)
+        with open(file_path, 'w') as f:
+            f.write(str(hostname))
