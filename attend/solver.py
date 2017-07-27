@@ -50,11 +50,10 @@ class AttendSolver():
 
         try:
             for i in range(1000000000):
-                context_ops = context.ups.copy()
+                context_ops = context_ops.copy()
                 context_ops.update(loss_ops['context'])
-                fetch.update(loss_ops['batch'])
-                fetch.update(loss_ops['all'])
-                ctx, batch_loss, all_loss = sess.run([context_ops, loss_ops['batch'], loss_ops['all']])
+                ctx, batch_loss, all_loss = \
+                    sess.run([context_ops, loss_ops['batch'], loss_ops['all']])
                 keys = list(map(lambda x: x.decode(), ctx['key']))
 
                 for i, key in enumerate(keys):
