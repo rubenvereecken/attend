@@ -52,9 +52,8 @@ class AttendSolver():
             for i in range(1000000000):
                 fetch = {}
                 fetch.update(context_ops)
-                fetch.update(loss_ops)
+                fetch.update(loss_ops['batch'])
                 out = sess.run(fetch)
-                print(out['batch_mse'])
                 import pdb
                 pdb.set_trace()
                 keys = list(map(lambda x: x.decode(), out['key']))
