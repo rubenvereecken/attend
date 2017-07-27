@@ -21,7 +21,7 @@ class AttendSolver():
         else:
             raise Exception()
 
-        self.loss_names = ['mse_reduced']
+        self.loss_names = ['mse']
         from attend import SummaryProducer
         self.summary_producer = SummaryProducer(self.loss_names)
         self.stats_every = stats_every
@@ -50,48 +50,26 @@ class AttendSolver():
 
         try:
             for i in range(1000000000):
-                fetch = {}
-                fetch.update(context_ops)
+                context_ops = context.ups.copy()
+                context_ops.update(loss_ops['context'])
                 fetch.update(loss_ops['batch'])
-                out = sess.run(fetch)
-                import pdb
-                pdb.set_trace()
-                keys = list(map(lambda x: x.decode(), out['key']))
-                # original_keys = list(map(lambda k: (str(k).split(':')[1]), out['key']))
+                fetch.update(loss_ops['all'])
+                ctx, batch_loss, all_loss = sess.run([context_ops, loss_ops['batch'], loss_ops['all']])
+                keys = list(map(lambda x: x.decode(), ctx['key']))
+
                 for i, key in enumerate(keys):
-                    idx = out['sequence_idx'][i]
-
                     if key not in seq_lengths_by_key:
-                        seq_lengths_by_key[key] = out['length'][i]
-
-                    for loss_name in loss_names:
-                        losses_by_key = losses_by_loss_by_key[loss_name]
-
-                        if key not in losses_by_key:
-                            count = out['sequence_count'][i]
-                            losses_by_key[key] = np.zeros(count)
-
-                        losses_by_key[key][idx] = out[loss_name][i]
+                        seq_lengths_by_key[key] = ctx['length'][i]
 
                 if coord.should_stop():
                     log.warning('Validation stopping because coord said so')
         except tf.errors.OutOfRangeError:
             log.info('Finished validation in %.2fs', time() - start)
 
-        seq_lengths = np.array(list(seq_lengths_by_key.values()))
-
-        # Per loss, the mean loss per video
-        mean_losses_by_loss = { k: \
-                [np.mean(losses) for losses in losses_by_loss_by_key[k].values()] \
-                for k in loss_names }
-        mean_losses_norm = { k: np.array(v) / seq_lengths for k, v in mean_losses_by_loss.items() }
-        mean_by_loss = { k: np.mean(v) for k, v in mean_losses_by_loss.items() }
-
-        # First time testing, build the test summary graph
-        # TODO maybe remove
+        mean_by_loss = { k: np.mean(v) for k, v in all_loss.items() }
 
         summary = self.summary_producer.create_loss_summary(sess, mean_by_loss,
-                mean_losses_by_loss, mean_losses_norm)
+                all_loss)
         summary_writer.add_summary(summary, global_step)
 
         # TODO threads are joined successfully but weird warnings about queues

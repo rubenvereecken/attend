@@ -239,8 +239,7 @@ class AttendModel():
             #         }
             shape = tf.shape(predictions)
             B, T = shape[0], shape[1]
-            # TODOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-            T = 100
+            T = self.T
             totals = tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
                         value_dtype=tf.float32, default_value=0,
                         name='total_table')
@@ -252,6 +251,9 @@ class AttendModel():
                         value_dtype=tf.float32, default_value=0,
                         name='mse_table')
                     }
+            lengths = tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
+                    value_dtype=tf.int32, default_value=0,
+                    name='length_table')
 
             # pred_holders = tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
             #             value_dtype=tf.float32, default_value=-1)
@@ -323,7 +325,9 @@ class AttendModel():
             # mask = tf.cast(tf.sequence_mask(lengths, T), tf.int32) # B x T
             mask = tf.cast(tf.sequence_mask(lengths, T), tf.float32)
 
-            with tf.name_scope('mse'):
+            length_update = lengths.insert(keys, lengths)
+
+            with tf.name_scope('streaming_mse'):
                 total_se = totals.lookup(keys)
                 masked_diff = (predictions - targets) * mask
                 current_se = tf.reduce_sum(tf.square(masked_diff, name='mse'), axis=1)
@@ -337,8 +341,11 @@ class AttendModel():
             # with tf.control_dependencies([loop]):
             out = dict(batch={}, all={})
 
-            with tf.control_dependencies([total_update, count_update, mse_update]):
-                out['all_keys'] = losses['mse'].export()[0]
+            with tf.control_dependencies([length_update, total_update,
+                                          count_update, mse_update]):
+                all_keys, all_lengths = lengths.export()
+                out['context'] = { 'all_keys': all_keys,
+                                   'all_lengths': all_lengths }
                 for k, v in losses.items():
                     out['batch'][k] = v.lookup(keys)
                     out['all'][k] = v.export()[1]

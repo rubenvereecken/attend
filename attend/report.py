@@ -58,8 +58,13 @@ class SummaryProducer:
 
         return summary_op
 
-    def create_loss_summary(self, sess, mean_loss, mean_by_seq, mean_by_seq_norm):
+    def create_loss_summary(self, sess, mean_loss, mean_by_seq, mean_by_seq_norm=None):
         feed_dict = {}
+        # TODO fix this some day
+        if mean_by_seq_norm is None:
+            mean_by_seq_norm = {}
+            for k, v in mean_by_seq.items():
+                mean_by_seq_norm[k] = np.zeros_like(v)
 
         for k, v in mean_loss.items():
             feed_dict[self.mean_losses[k]] = v
