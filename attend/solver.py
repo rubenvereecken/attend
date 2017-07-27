@@ -54,8 +54,9 @@ class AttendSolver():
                 fetch.update(context_ops)
                 fetch.update(loss_ops)
                 out = sess.run(fetch)
-                original_keys = list(map(lambda k: (str(k).split(':')[1]), out['key']))
-                for i, key in enumerate(original_keys):
+                keys = list(map(lambda x: x.decode(), out['key']))
+                # original_keys = list(map(lambda k: (str(k).split(':')[1]), out['key']))
+                for i, key in enumerate(keys):
                     idx = out['sequence_idx'][i]
 
                     if key not in seq_lengths_by_key:
@@ -218,6 +219,7 @@ class AttendSolver():
                         # Otherwise it will recompute the loss separately
                         loss, _, summary, keys = sess.run([loss_op, train_op, summary_op, ctx['key']])
                         losses[step_i % self.stats_every] = loss # Circular buffer
+                        # keys = list(map(lambda x: x.decode(), keys))
                     # If duplicate key is encountered this could happen rarely
                     except tf.errors.InvalidArgumentError as e:
                         log.exception(e)

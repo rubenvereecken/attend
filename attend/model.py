@@ -191,17 +191,19 @@ class AttendModel():
 
         # Is sparse for some annoying reason
 
-        # Can't get the damn key out TODO
-        # state_saver.key.set_shape([1])
-        # key_splits = tf.split(state_saver.key, ':')
-        # original_keys = key_splits.values[1::2] # Every second from the splits, being the keys
+        # Assume key looks like 'seqn:original_key:random', so 3 splits
+        splits = tf.string_split(state_saver.key, ':')
+        splits = tf.reshape(splits.values, ([-1,3])) # Reshape per key
+        splits = splits[:,1:] # Drop the sequence info
+        keys = tf.map_fn(lambda x: tf.string_join(tf.unstack(x), ':'), splits)
 
         context = {
                 'length': lengths,
                 'sequence_idx': state_saver.sequence,
                 'sequence_count': state_saver.sequence_count,
                 # 'original_key': original_keys,
-                'key': state_saver.key,
+                # 'key': state_saver.key,
+                'key': keys,
                 }
 
         return outputs, context
