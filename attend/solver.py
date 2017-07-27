@@ -21,7 +21,7 @@ class AttendSolver():
         else:
             raise Exception()
 
-        self.loss_names = ['mse']
+        self.loss_names = ['mse', 'pearson_r', 'mse_tf']
         from attend import SummaryProducer
         self.summary_producer = SummaryProducer(self.loss_names)
         self.stats_every = stats_every
@@ -52,8 +52,8 @@ class AttendSolver():
             for i in range(1000000000):
                 context_ops = context_ops.copy()
                 context_ops.update(loss_ops['context'])
-                ctx, batch_loss, all_loss = \
-                    sess.run([context_ops, loss_ops['batch'], loss_ops['all']])
+                ctx, _, all_loss, total_loss = \
+                    sess.run([context_ops, loss_ops['batch'], loss_ops['all'], loss_ops['total']])
                 keys = list(map(lambda x: x.decode(), ctx['key']))
 
                 for i, key in enumerate(keys):
@@ -66,6 +66,10 @@ class AttendSolver():
             log.info('Finished validation in %.2fs', time() - start)
 
         mean_by_loss = { k: np.mean(v) for k, v in all_loss.items() }
+        mean_by_loss.update(total_loss)
+        n_keys = len(ctx['all_keys'])
+        for k, v in total_loss.items():
+            all_loss.update({ k: np.zeros((n_keys, *v.shape)) })
 
         summary = self.summary_producer.create_loss_summary(sess, mean_by_loss,
                 all_loss)

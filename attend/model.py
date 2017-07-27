@@ -223,38 +223,11 @@ class AttendModel():
 
         return loss
 
-    def streaming_mse(self, predictions, targets, keys, lengths):
-        T = self.T
-
-        with tf.name_scope('streaming_mse'):
-            mask = tf.cast(tf.sequence_mask(lengths, T), tf.float32)
-
-            totals = tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
-                        value_dtype=tf.float32, default_value=0,
-                        name='total_table')
-            counts = tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
-                        value_dtype=tf.float32, default_value=0,
-                        name='count_table')
-            mse = tf.contrib.lookup.MutableHashTable(key_dtype=tf.string,
-                        value_dtype=tf.float32, default_value=0,
-                        name='mse_table')
-
-            total_se = totals.lookup(keys)
-            masked_diff = (predictions - targets) * mask
-            current_se = tf.reduce_sum(tf.square(masked_diff, name='mse'), axis=1)
-            total_se += current_se
-            total_update = totals.insert(keys, total_se)
-            count = counts.lookup(keys)
-            count += tf.cast(lengths, tf.float32)
-            count_update = counts.insert(keys, count)
-            mse_update = mse.insert(keys, total_se / (count))
-
-        with tf.control_dependencies([total_update, count_update, mse_update]):
-            return mse.lookup(keys), mse
-
 
     # It's important to have losses per entire sequence
     def calculate_losses(self, predictions, targets, keys, lengths=None, scope='loss'):
+        from attend import metrics
+
         with tf.variable_scope(scope):
             targets = tf.squeeze(targets, axis=2)
             shape = tf.shape(predictions)
@@ -264,26 +237,36 @@ class AttendModel():
                     value_dtype=tf.int64, default_value=0,
                     name='length_table')
 
-            # mask = tf.cast(tf.sequence_mask(lengths, T), tf.float32)
+            mask = tf.cast(tf.sequence_mask(lengths, T), tf.float32)
             length_update = length_table.insert(keys, tf.cast(lengths, tf.int64))
 
-            out = dict(batch={}, all={})
+            out = dict(batch={}, all={}, total={})
 
             loss_tables = {}
             batch_losses = {}
 
-            batch_mse, mse_table = self.streaming_mse(predictions, targets,
-                    keys, lengths)
+            batch_mse, mse_table = metrics.streaming_mse(predictions, targets,
+                    keys, lengths, mask)
             batch_losses['mse'] = batch_mse
             loss_tables['mse'] = mse_table
 
-            with tf.control_dependencies([length_update]):
+            corr, corr_update = tf.contrib.metrics.streaming_pearson_correlation(
+                    predictions, targets, mask)
+            tfmse, tfmse_update = tf.contrib.metrics.streaming_mean_squared_error(
+                    predictions, targets, mask)
+
+            error_updates = tf.group(corr_update, tfmse_update)
+
+            with tf.control_dependencies([length_update, error_updates]):
                 all_keys, all_lengths = length_table.export()
                 out['context'] = { 'all_keys': all_keys,
                                    'all_lengths': all_lengths }
                 for k in batch_losses.keys():
                     out['batch'][k] = batch_losses[k]
                     out['all'][k] = loss_tables[k].export()[1]
+
+                out['total']['pearson_r'] = corr
+                out['total']['mse_tf'] = tfmse
 
             return out
 

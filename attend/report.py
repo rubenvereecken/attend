@@ -25,7 +25,7 @@ class SummaryProducer:
         self.process = psutil.Process(os.getpid())
 
     def mean_scalar(self):
-        mean_summaries = [ tf.summary.scalar(loss_name + '/mean',
+        mean_summaries = [ tf.summary.scalar(loss_name + '/total',
             self.mean_losses[loss_name],
             collections=attend.GraphKeys.VAL_SUMMARIES,
             family='validation') for loss_name in self.loss_names]
@@ -78,7 +78,6 @@ class SummaryProducer:
         summary = sess.run(self.summary_op, feed_dict=feed_dict)
         return summary
 
-
     def build_stats_op(self):
         scalars = [
                 tf.summary.scalar('steps_per_second',
@@ -96,7 +95,6 @@ class SummaryProducer:
                 ]
         summary_op = tf.summary.merge(scalars)
         return summary_op
-
 
     def create_stats_summary(self, sess, elapsed, global_step, mean_loss):
         steps = global_step - self.last_step
