@@ -63,19 +63,20 @@ class AttendModel():
         """
         # Require features to be flat at this point
         x.shape.assert_has_rank(3)
+        D_enc = np.prod(x.shape.as_list()[2:])
 
         with tf.variable_scope('project_features', reuse=reuse):
-            W = tf.get_variable('W', [self.D, self.D], initializer=self.weight_initializer)
-            b = tf.get_variable('b', [self.D], initializer=self.const_initializer)
+            W = tf.get_variable('W', [D_enc, D_enc], initializer=self.weight_initializer)
+            b = tf.get_variable('b', [D_enc], initializer=self.const_initializer)
             feat_proj = tf.einsum('ijk,kl->ijl', x, W) + b
 
         with tf.variable_scope('attention_layer', reuse=reuse):
             # TODO dropout on attention hidden weights
-            W = tf.get_variable('W', [self.H, self.D], initializer=self.weight_initializer)
-            b = tf.get_variable('b', [self.D], initializer=self.const_initializer)
+            W = tf.get_variable('W', [self.H, D_enc], initializer=self.weight_initializer)
+            b = tf.get_variable('b', [D_enc], initializer=self.const_initializer)
             h_att = tf.nn.relu(feat_proj + tf.expand_dims(tf.matmul(h, W), 1) + b, name='h_att')
 
-            w_att = tf.get_variable('w_att', [self.D, 1], initializer=self.weight_initializer)
+            w_att = tf.get_variable('w_att', [D_enc, 1], initializer=self.weight_initializer)
             out_att = tf.einsum('ijk,kl->ij', h_att, w_att)
             # Softmax assigns probability to each frame
             alpha = tf.nn.softmax(out_att, name='alpha')
@@ -133,6 +134,12 @@ class AttendModel():
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
 
         outputs = []
+        if self.attention_layer:
+            contexts = []
+            alphas = []
+        else:
+            contexts = None
+            alphas = None
 
         with tf.variable_scope('decoder'):
             lstm_scope = None
@@ -152,9 +159,11 @@ class AttendModel():
                 if self.attention_layer:
                     # for t = 0, use current and t-1 from history
                     # for t = T-1, use all of current frame and none from history
-                    past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], name='window')
-                    log.debug('Enabling attention with a %s step window', T)
-                    context, alpha = self.attention_layer(x, h)
+                    past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], 1, name='window')
+                    # log.debug('Enabling attention with a %s step window', T)
+                    context, alpha = self.attention_layer(past_window, h, t!=0)
+                    contexts.append(context)
+                    alphas.append(context)
                     decoder_lstm_input = tf.concat([true_prev_target, context], 1)
                 else:
                     decoder_lstm_input = tf.concat([true_prev_target, x[:,t,:]], 1)
@@ -167,6 +176,9 @@ class AttendModel():
                     output = self._decode(c, dropout=True, reuse=(t!=0))
                     outputs.append(output)
             outputs = tf.squeeze(tf.stack(outputs, axis=1), axis=[2]) # B x T
+            if self.attention_layer:
+                contexts = tf.stack(contexts, axis=1)
+                alphas = tf.stack(alphas, axis=1)
 
         control_deps = []
 
@@ -201,7 +213,16 @@ class AttendModel():
                 'key': self._extract_keys(state_saver.key),
                 }
 
-        return outputs, context
+        out = {
+                'output': outputs,
+                }
+        if self.attention_layer:
+            out.update({
+                'context': contexts,
+                'alpha': alphas,
+                })
+
+        return out, context
 
 
     def _extract_keys(self, keys):

@@ -66,6 +66,9 @@ class Provider():
                     })
             return initial_states
 
+    def preprocess_example(self, example):
+        return example
+
     def batch_sequences_with_states(self, num_epochs=None, collection=None):
         container = util.noop()
         with container:
@@ -84,13 +87,10 @@ class Provider():
                         min_after_dequeue=shuffle_min
                         )
 
+                example = self.preprocess_example(example)
+
                 # NOTE temporarily disabled because in case of manual feeding
                 # you lose the time dimension
-                # If mismatch, it probably needs a reshape
-                # with tf.name_scope('reshape'):
-                    # if len(self.dim_feature) + 1 != example.shape.ndims:
-                    #     example = tf.reshape(example, [-1, *self.dim_feature])
-                    # example.shape.merge_with([None, *self.dim_feature])
 
                 initial_states = self._prepare_initial()
                 input_sequences = { 'images': example }
@@ -183,6 +183,15 @@ class FileProvider(Provider):
             raise Exception('Unsupported file format')
 
 
+    def preprocess_example(self, example):
+        # If mismatch, it probably needs a reshape
+        with tf.name_scope('reshape'):
+            if len(self.dim_feature) + 1 != example.shape.ndims:
+                example = tf.reshape(example, [-1, *self.dim_feature])
+            example.shape.merge_with([None, *self.dim_feature])
+            return example
+
+
 class ManualStateSaver:
     def __init__(self, input_sequences, input_key, input_context,
             input_length, initial_states, num_unroll, batch_size):
@@ -271,3 +280,5 @@ class InMemoryProvider(Provider):
             return self.placeholders['features'], None, \
                 { k: self.placeholders[k] for k in ['key', 'num_frames'] }
 
+    def preprocess_example(self, example):
+        return example

@@ -99,7 +99,8 @@ class Evaluator:
                         }
 
             out, ctx = self.sess.run((self.out_ops, self.ctx_ops), feed_dict=feed_dict)
-            out_arr[offset:offset+batch_l] = out[0][:batch_l]
+            output = out['output']
+            out_arr[offset:offset+batch_l] = output[0][:batch_l]
             print(ctx)
 
         return out_arr

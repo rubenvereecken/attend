@@ -108,7 +108,8 @@ class AttendSolver():
 
         # Prediction and loss
         with tf.variable_scope(tf.get_variable_scope()):
-            outputs, ctx = self.model.build_model(provider, True)
+            out, ctx = self.model.build_model(provider, True)
+            outputs = out['output']
             loss_op = self.model.calculate_loss(outputs, provider.targets, ctx['length'])
 
         if not val_provider is None:
@@ -118,7 +119,8 @@ class AttendSolver():
                     collection=attend.GraphKeys.VAL_INPUT_RUNNERS)
             with tf.variable_scope(tf.get_variable_scope(), reuse=True):
                 # tf.get_variable_scope().reuse_variables()
-                val_outputs, val_ctx = self.model.build_model(val_provider, False)
+                val_out, val_ctx = self.model.build_model(val_provider, False)
+                val_outputs = val_out['output']
                 val_losses = self.model.calculate_losses(val_outputs,
                         val_provider.targets, val_ctx['key'], val_ctx['length'], 'val_loss')
                 g.add_to_collection('val_outputs', val_outputs)
@@ -135,8 +137,6 @@ class AttendSolver():
             eval_graph = self.create_test_graph(**provider.__dict__)
             tf.train.export_meta_graph(filename=log_dir + '/eval_model.meta',
                     graph=eval_graph, as_text=True)
-            import pdb
-            pdb.set_trace()
 
 
         with tf.variable_scope('optimizer', reuse=False):
@@ -242,11 +242,6 @@ class AttendSolver():
                 ## END OF EPOCH
                 # SAVING
                 save_path = saver.save(sess, log_dir + '/model.ckpt', global_step_value)
-                import pdb
-                pdb.set_trace()
-
-                import pdb
-                pdb.set_trace()
 
                 # Validation after every epoch
                 if val_provider:
