@@ -7,6 +7,9 @@ class GraphKeys:
     STATS_SUMMARIES = 'stats_summaries'
 
 
-from report import SummaryProducer
-from run import Runner
-from log import Log
+from .report import SummaryProducer
+from .run import Runner
+from .log import Log
+from .solver import AttendSolver
+from .model import AttendModel
+from .encoder import Encoder

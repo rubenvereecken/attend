@@ -35,7 +35,7 @@ if __name__ == '__main__':
     import inspect
     from attend.solver import AttendSolver
     from attend.model import AttendModel
-    from attend.provider import Provider
+    from attend.provider import FileProvider, Provider
     from attend.encoder import Encoder
 
     all_args['filenames'] = [all_args['data_file']]
@@ -46,7 +46,9 @@ if __name__ == '__main__':
     all_args['encoder'] = init_with(Encoder, all_args)
 
     provider_args = all_args.copy()
-    all_args['provider'] = init_with(Provider, provider_args)
+    # all_args['provider'] = init_with(FileProvider, provider_args)
+    all_args['provider'] = FileProvider(all_args['filenames'],
+            **pick(all_args, params_for(Provider.__init__)))
 
     if not runner.args.val_data is None:
         assert os.path.exists(runner.args.val_data), "Validation data not found"
@@ -54,7 +56,9 @@ if __name__ == '__main__':
         val_args['filenames'] = [runner.args.val_data]
         val_args['shuffle_examples'] = False # Don't shuffle validation data
         val_args['batch_size'] = all_args['val_batch_size']
-        all_args['val_provider'] = init_with(Provider, val_args)
+        # all_args['val_provider'] = init_with(Provider, val_args)
+        all_args['val_provider'] = FileProvider(val_args['filenames'],
+                **pick(all_args, params_for(Provider.__init__)))
     all_args['model'] = AttendModel(**pick(all_args, params_for(AttendModel.__init__)))
 
     solver = init_with(AttendSolver, all_args)

@@ -6,6 +6,7 @@ class Log:
     filename = None
     log_dir = None
     level = None
+    root_logger = None
 
     @classmethod
     def setup(cls, log_dir, debug=True):
@@ -31,6 +32,10 @@ class Log:
 
     @classmethod
     def get_logger(cls, name):
+        if cls.root_logger is None:
+            cls.root_logger = logging.getLogger()
+            cls.root_logger.warning('No root logger set! Falling back')
+
         return cls.root_logger.getChild(name)
 
 
@@ -71,3 +76,9 @@ class Log:
         file_path = cls.log_dir + '/{}'.format(hostname)
         with open(file_path, 'w') as f:
             f.write(str(hostname))
+
+    @classmethod
+    def save_meta(cls, d, file_name='meta'):
+        file_path = cls.log_dir + '/{}.cson'.format(file_name)
+        with open(file_path, 'w') as f:
+            cson.dump(dict(d), f, sort_keys=True, indent=4)

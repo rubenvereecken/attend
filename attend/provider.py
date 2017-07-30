@@ -1,6 +1,8 @@
 import tensorflow as tf
 import numpy as np
 
+from functools import *
+
 from attend.readers import *
 from attend.log import Log; log = Log.get_logger(__name__)
 from attend import util
@@ -9,54 +11,34 @@ class Provider():
     ENCODE_LSTM_C = 'encode_lstm_c'
     ENCODE_LSTM_H = 'encode_lstm_h'
 
-    def __init__(self, filenames, encoder, batch_size, num_hidden, time_steps,
+    def __init__(self, encoder, batch_size, num_hidden, time_steps,
             feat_name='conflict',
-            # num_epochs=None,
+            dim_feature=None,
             shuffle_examples=False, shuffle_examples_capacity=None,
             shuffle_splits=False, shuffle_splits_capacity=None,
-            seq_q=True, debug=False):
-        self.filenames   = filenames
+            debug=False):
         self.batch_size  = batch_size
         self.time_steps  = time_steps
         self.T           = time_steps
         self.H           = num_hidden
         self.feat_name   = feat_name
-        # self.num_epochs  = num_epochs
-        self.seq_q       = seq_q
-        self.dim_feature = [224, 224, 3]
+        self.dim_feature = dim_feature
         self.encoder     = encoder
-        # Encoded dimension after flattening
-        # self.scope       = 'input'
-        # with tf.name_scope('input') as name_scope:
-        #     self.name_scope = name_scope
-        # with tf.variable_scope('input') as scope:
-        #     self.scope = scope
-        self.state_saver = None
         self.debug = debug
+
+        self.state_saver = None
 
         self.shuffle_examples = shuffle_examples
         self.shuffle_examples_capacity = shuffle_examples_capacity \
                 if not shuffle_examples_capacity is None else batch_size * 4
 
-        if len(filenames) == 1 and filenames[0].endswith('hdf5'):
-            # self.input_producer = generate_single_sequence_example_from_hdf5
-            reader = HDF5SequenceReader(filenames[0], feat_name)
-            self.dim_feature = reader.feature_shape
-            # TODO not using scope atm
-            self.input_producer = lambda filename, feat_name, scope, **kwargs: \
-                generate_single_sequence_example(reader, scope, **kwargs)
-
-        elif len(filenames) == 1 and filenames[0].endswith('tfrecords'):
-            seq_shape = read_shape_from_tfrecords_for(filenames[0])
-            # TODO just flatten it for now, might want shape back later
-            self.dim_feature = (np.prod(seq_shape[1:]),)
-            log.warning('%s', self.dim_feature)
-            self.input_producer = read_single_sequence_example_fom_tfrecord
-        else:
-            print(filenames)
-            raise Exception('Unknown file format, expecting just one file')
-
         self.dim_encoded = self._deduce_encoded_dim()
+
+        # Overridden in InMemoryProvider
+        self._batch_sequences_with_states = tf.contrib.training.batch_sequences_with_states
+
+    def input_producer(*args, **kwargs):
+        raise NotImplementedError()
 
     def _deduce_encoded_dim(self):
         dims = self.encoder.encoded_dim(self.dim_feature)
@@ -95,26 +77,27 @@ class Provider():
                 if shuffle_capacity > 0:
                     log.info('Shuffling examples w capacity %s, min %s', shuffle_capacity, shuffle_min)
 
-                example, target, context = self.input_producer(self.filenames[0],
-                        self.feat_name, scope,
+                example, target, context = self.input_producer(scope,
                         num_epochs=num_epochs,
                         shuffle_capacity=shuffle_capacity,
                         min_after_dequeue=shuffle_min
                         )
 
+                # NOTE temporarily disabled because in case of manual feeding
+                # you lose the time dimension
                 # If mismatch, it probably needs a reshape
-                with tf.name_scope('reshape'):
-                    if len(self.dim_feature) + 1 != example.shape.ndims:
-                        example = tf.reshape(example, [-1, *self.dim_feature])
-                    example.shape.merge_with([None, *self.dim_feature])
+                # with tf.name_scope('reshape'):
+                    # if len(self.dim_feature) + 1 != example.shape.ndims:
+                    #     example = tf.reshape(example, [-1, *self.dim_feature])
+                    # example.shape.merge_with([None, *self.dim_feature])
 
                 initial_states = self._prepare_initial()
+                input_sequences = { 'images': example }
+                if not target is None:
+                    input_sequences[self.feat_name] = target
 
-                batch = tf.contrib.training.batch_sequences_with_states(
-                        input_sequences={
-                            'images': example,
-                            self.feat_name: target,
-                        },
+                batch = self._batch_sequences_with_states(
+                        input_sequences= input_sequences,
                         input_key      = context['key'] + ':', # : for split
                         input_context  = context,
                         input_length   = context['num_frames'],
@@ -127,7 +110,7 @@ class Provider():
                         make_keys_unique = True,
                         allow_small_batch = True # Required otherwise blocks
                         )
-                example_batch, target_batch = batch.sequences['images'], batch.sequences[self.feat_name]
+                example_batch, target_batch = batch.sequences['images'], batch.sequences.get(self.feat_name, None)
 
                 # Move the queue runners to a different collection
                 if not collection is None:
@@ -141,9 +124,8 @@ class Provider():
                 self.state_saver = batch
                 # This fixes an expectation of targets being single-dimensional further down the line
                 # So like [?, T, 1] instead of just [?, T]
-                if len(self.targets.shape) <= 2:
+                if not self.targets is None and len(self.targets.shape) <= 2:
                     self.targets = tf.expand_dims(self.targets, -1)
-
 
     def batch_static_pad(self):
         example, target, context = self.input_producer(self.filenames[0], self.feat_name, self.name_scope)
@@ -173,3 +155,119 @@ class Provider():
         self.targets     = target_batch
 
         return example_batch, target_batch
+
+
+class FileProvider(Provider):
+    def __init__(self, filenames, *args, **kwargs):
+        self.filenames = filenames
+        super().__init__(*args, **kwargs)
+
+        if len(filenames) == 1 and filenames[0].endswith('hdf5'):
+            # self.input_producer = generate_single_sequence_example_from_hdf5
+            reader = HDF5SequenceReader(filenames[0], feat_name)
+            self.dim_feature = reader.feature_shape
+            # self.input_producer = lambda filename, feat_name, scope, **kwargs: \
+            #     generate_single_sequence_example(reader, scope, **kwargs)
+            raise Exception('Not too well supported lately')
+
+        elif len(filenames) == 1 and filenames[0].endswith('tfrecords'):
+            seq_shape = read_shape_from_tfrecords_for(filenames[0])
+            # TODO just flatten it for now, might want shape back later
+            self.dim_feature = (np.prod(seq_shape[1:]),)
+            log.warning('%s', self.dim_feature)
+            self.input_producer = partial(read_single_sequence_example_fom_tfrecord,
+                    filenames[0], self.feat_name)
+
+        else:
+            raise Exception('Unsupported file format')
+
+
+class ManualStateSaver:
+    def __init__(self, input_sequences, input_key, input_context,
+            input_length, initial_states, num_unroll, batch_size):
+
+        self._initial_states = initial_states
+        self._states = {}
+        self._sequences = input_sequences
+        self._state_shapes = {}
+
+        for k, v in initial_states.items():
+            self._state_shapes[k] = v.shape
+            # Have to store values flat for some reason
+            value = tf.reshape(v, [-1])
+            self._states[k] = tf.contrib.lookup.MutableHashTable(
+                    key_dtype=tf.string, value_dtype=v.dtype,
+                    default_value=value, name='{}_table'.format(k))
+
+
+        # Properties to be fed in
+        self._length = tf.placeholder(tf.int64, (None,))
+        self._sequence = tf.placeholder(tf.int32, (None,))
+        self._sequence_count = tf.placeholder(tf.int32, (None,))
+
+        # Complicated key
+        self._key = tf.placeholder(tf.string, (None,))
+
+
+    def state(self, k):
+        t = self._states[k].lookup(self._key)
+        shape = self._state_shapes[k]
+        return tf.reshape(t, [-1, *shape.as_list()])
+        # return t
+
+    def save_state(self, key, value, name=None):
+        shape = self._state_shapes[key]
+        value = tf.reshape(value, [-1, np.prod(shape.as_list()).astype(int)])
+        return self._states[key].insert(self._key, value)
+
+    @property
+    def sequences(self):
+        return self._sequences
+
+    @property
+    def length(self):
+        return self._length
+
+    @property
+    def sequence(self):
+        return self._sequence
+
+    @property
+    def sequence_count(self):
+        return self._sequence_count
+
+    @property
+    def key(self):
+        return self._key
+
+
+def batch_sequences_with_states(input_sequences, input_key, input_context,
+        input_length, initial_states, num_unroll, batch_size, **kwargs):
+    state_saver = ManualStateSaver(input_sequences, input_key, input_context,
+            input_length, initial_states, num_unroll, batch_size)
+    return state_saver
+
+
+class InMemoryProvider(Provider):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Gets populated by the input producer
+        self.placeholders = {}
+
+        self.input_producer = self._placeholder_provider
+        self._batch_sequences_with_states = batch_sequences_with_states
+
+
+    def _placeholder_provider(self, scope, **kwargs):
+        # Assume test for now
+        with tf.variable_scope(scope):
+            self.placeholders = {
+                    'features': tf.placeholder(tf.float32,
+                        shape=(None, None, *self.dim_feature)),
+                    'key': tf.placeholder(tf.string, shape=(None,)),
+                    'num_frames': tf.placeholder(tf.int64, shape=(None,)),
+                    }
+            return self.placeholders['features'], None, \
+                { k: self.placeholders[k] for k in ['key', 'num_frames'] }
+

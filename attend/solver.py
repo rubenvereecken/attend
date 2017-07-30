@@ -4,7 +4,7 @@ from time import time
 from collections import OrderedDict
 
 
-from util import *
+from .util import *
 from attend.log import Log; log = Log.get_logger(__name__)
 import attend
 
@@ -120,6 +120,10 @@ class AttendSolver():
                 val_outputs, val_ctx = self.model.build_model(val_provider, False)
                 val_losses = self.model.calculate_losses(val_outputs,
                         val_provider.targets, val_ctx['key'], val_ctx['length'], 'val_loss')
+                g.add_to_collection('val_outputs', val_outputs)
+                for v in val_ctx.values():
+                    g.add_to_collection('val_context', v)
+                # g.add_to_collection('val_losses', val_losses)
 
             if debug:
                 assert n_vars == len(tf.trainable_variables()), 'New vars were created for val'
@@ -184,7 +188,7 @@ class AttendSolver():
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
 
-        g.finalize() # No ops can be added after this
+        # g.finalize() # No ops can be added after this
 
         t_start = time()
         log.info('Started training')
@@ -229,6 +233,11 @@ class AttendSolver():
                 ## END OF EPOCH
                 # SAVING
                 save_path = saver.save(sess, log_dir + '/model.ckpt', global_step_value)
+                import pdb
+                pdb.set_trace()
+
+                import pdb
+                pdb.set_trace()
 
                 # Validation after every epoch
                 if val_provider:

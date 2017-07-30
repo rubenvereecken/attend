@@ -181,13 +181,16 @@ class AttendModel():
                         tf.zeros([batch_size], dtype=tf.bool), 'first'),
                     state_saver.save_state('history', x, 'history')
                 )
-            control_deps.append(save_state)
 
-        # Makes it easier by just injecting the save state control op
-        # into the rest of the computation graph, but also makes it messy
-        with tf.control_dependencies(control_deps):
-            lengths = state_saver.length
-            outputs = tf.identity(outputs) # Tricksy way of injecting dependency
+                control_deps.append(save_state)
+
+                # Makes it easier by just injecting the save state control op
+                # into the rest of the computation graph, but also makes it messy
+                with tf.control_dependencies(control_deps):
+                    lengths = state_saver.length
+                    outputs = tf.identity(outputs) # Tricksy way of injecting dependency
+        else:
+            assert len(control_deps) == 0
 
         context = {
                 'length': lengths,
@@ -202,12 +205,13 @@ class AttendModel():
 
 
     def _extract_keys(self, keys):
-        # Assume key looks like 'seqn:original_key:random', so 3 splits
-        splits = tf.string_split(keys, ':')
-        splits = tf.reshape(splits.values, ([-1,3])) # Reshape per key
-        splits = splits[:,1:] # Drop the sequence info
-        keys = tf.map_fn(lambda x: tf.string_join(tf.unstack(x), ':'), splits)
-        return keys
+        with tf.name_scope('extract_keys'):
+            # Assume key looks like 'seqn:original_key:random', so 3 splits
+            splits = tf.string_split(keys, ':')
+            splits = tf.reshape(splits.values, ([-1,3])) # Reshape per key
+            splits = splits[:,1:] # Drop the sequence info
+            keys = tf.map_fn(lambda x: tf.string_join(tf.unstack(x), ':'), splits)
+            return keys
 
 
     def calculate_loss(self, predictions, targets, lengths=None):

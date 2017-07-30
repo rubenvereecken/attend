@@ -1,4 +1,5 @@
 import inspect
+import numpy as np
 
 def pick(dic, l):
     '''
@@ -16,8 +17,8 @@ def call_with(fun, d):
     return fun(**pick(d, params_for(fun)))
 
 
-def init_with(cls, d):
-    return cls(**pick(d, params_for(cls.__init__)))
+def init_with(cls, d, *args, **kwargs):
+    return cls(*args, **pick(d, params_for(cls.__init__)), **kwargs)
 
 
 def notify(title, text='', duration=5000):
@@ -31,3 +32,7 @@ def noop():
     yield None
 
 
+def pad(x, pad_width, axis=0):
+    padding = [[0, 0] for _ in range(x.ndim)]
+    padding[axis][1] = pad_width
+    return np.pad(x, padding, mode='constant')

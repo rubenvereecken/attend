@@ -202,6 +202,16 @@ def read_single_sequence_example_fom_tfrecord(filename, feat_name, scope,
     return example, target, context
 
 
+def read_data_into_queue(features, targets, context):
+    with tf.name_scope('memory_queue'):
+        q_in = {'example': features, 'target': targets}
+        dtypes = [features.dtype, targets.dtype]
+        # context: num_frames
+
+        q = tf.FIFOQueue(capacity=64,
+                )
+
+
 def read_shape_from_tfrecords_for(filename, key='features'):
     """
     Reads the first sequence example's context to get features shape
