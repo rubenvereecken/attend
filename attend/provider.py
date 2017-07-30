@@ -18,9 +18,10 @@ class Provider():
             shuffle_splits=False, shuffle_splits_capacity=None,
             debug=False):
         self.batch_size  = batch_size
-        self.time_steps  = time_steps
         self.T           = time_steps
+        self.time_steps  = time_steps
         self.H           = num_hidden
+        self.num_hidden  = num_hidden
         self.feat_name   = feat_name
         self.dim_feature = dim_feature
         self.encoder     = encoder
@@ -199,13 +200,12 @@ class ManualStateSaver:
                     key_dtype=tf.string, value_dtype=v.dtype,
                     default_value=value, name='{}_table'.format(k))
 
-
         # Properties to be fed in
         self._length = tf.placeholder(tf.int64, (None,))
         self._sequence = tf.placeholder(tf.int32, (None,))
         self._sequence_count = tf.placeholder(tf.int32, (None,))
 
-        # Complicated key
+        # Complicated key, also to be fed in currently
         self._key = tf.placeholder(tf.string, (None,))
 
 

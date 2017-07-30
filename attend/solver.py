@@ -6,6 +6,7 @@ from collections import OrderedDict
 
 from .util import *
 from attend.log import Log; log = Log.get_logger(__name__)
+from attend import util
 import attend
 
 class AttendSolver():
@@ -128,6 +129,14 @@ class AttendSolver():
             if debug:
                 assert n_vars == len(tf.trainable_variables()), 'New vars were created for val'
 
+        # TODO pick this up one day again
+        # https://github.com/tensorflow/tensorflow/issues/11888
+        if False:
+            eval_graph = self.create_test_graph(**provider.__dict__)
+            tf.train.export_meta_graph(filename=log_dir + '/eval_model.meta',
+                    graph=eval_graph, as_text=True)
+            import pdb
+            pdb.set_trace()
 
 
         with tf.variable_scope('optimizer', reuse=False):
@@ -269,3 +278,22 @@ class AttendSolver():
             # coord.stop() DOESNT EXIST
 
         sess.close()
+
+
+    def create_test_graph(self, **kwargs):
+        from attend.provider import InMemoryProvider, Provider
+
+        graph = tf.Graph()
+        provider = InMemoryProvider(**util.pick(kwargs, util.params_for(Provider.__init__)))
+        scope = ''
+
+        with graph.as_default():
+            with tf.variable_scope(scope, reuse=False):
+                provider.batch_sequences_with_states()
+                out_ops, ctx_ops = self.model.build_model(provider, False)
+
+        return graph
+
+
+
+

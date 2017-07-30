@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import cson
+import os
 
 from attend import util
 from attend import Encoder, AttendSolver, AttendModel
@@ -18,18 +19,17 @@ class Evaluator:
         self.sess = tf.Session(graph=self.graph)
 
 
-
     def _build_model(self):
         with self.graph.as_default():
             with tf.variable_scope(self.scope):
                 self.provider.batch_sequences_with_states()
                 out_ops, ctx_ops = self.model.build_model(self.provider, False)
-                self.init_op = tf.group(tf.global_variables_initializer(),
-                                        tf.local_variables_initializer())
         return out_ops, ctx_ops
 
 
     def initialize_variables(self):
+        self.init_op = tf.group(tf.global_variables_initializer(),
+                                tf.local_variables_initializer())
         self.sess.run(self.init_op)
 
     @property
@@ -43,7 +43,17 @@ class Evaluator:
 
     @classmethod
     def init_from_logs(cls, log_dir, feat_dim=(272,)):
+        """
+        Rebuilds the model from logs based on the saved cli arguments
+        and saved network weights.
+        There can be a discrepancy between the code at that time and now.
+        """
+        if not os.path.exists(log_dir + '/args.cson'):
+            raise Exception('No args.cson file found in {}'.format(log_dir))
+
         checkpoint = tf.train.latest_checkpoint(log_dir)
+        if checkpoint is None:
+            raise Exception('No checkpoints file found in {}'.format(log_dir))
 
         with open(log_dir + '/args.cson', 'r') as f:
             args = cson.load(f)
@@ -93,7 +103,3 @@ class Evaluator:
             print(ctx)
 
         return out_arr
-
-def create_test_graph(model):
-    # from attend.provider import InMemoryProvider
-    pass
