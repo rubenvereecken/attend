@@ -42,6 +42,7 @@ class Runner:
         _boolean_argument('shuffle_examples')
         _boolean_argument('use_dropout')
         _boolean_argument('use_maxnorm')
+        _boolean_argument('final_sigmoid')
 
         parser.add_argument('--dropout', type=float)
 

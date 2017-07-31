@@ -26,7 +26,9 @@ class Defaults:
         shuffle_splits_capacity   = None,
 
         stats_every = 100,
-        gen_log_dir = True
+        gen_log_dir = True,
+
+        final_sigmoid = False
     )
 
     debug_params = dict(

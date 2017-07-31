@@ -57,6 +57,8 @@ class Evaluator:
 
         with open(log_dir + '/args.cson', 'r') as f:
             args = cson.load(f)
+            import pdb
+            pdb.set_trace()
 
         encoder = util.init_with(Encoder, args)
         provider = InMemoryProvider(encoder=encoder, dim_feature=feat_dim,
@@ -76,10 +78,17 @@ class Evaluator:
         """
 
         T = self.model.T
+        D = 256
         l = sequence.shape[0]
         n_batches = np.ceil(l / T).astype(int)
 
-        out_arr = np.empty((l,))
+        total = { 'output': np.empty((l,)) }
+
+        if 'context' in self.out_ops:
+            total.update({
+                  'context': np.empty((l, D)),
+                  'alpha': np.empty((l, D)),
+                })
 
         state_saver = self.provider.state_saver
 
@@ -99,8 +108,7 @@ class Evaluator:
                         }
 
             out, ctx = self.sess.run((self.out_ops, self.ctx_ops), feed_dict=feed_dict)
-            output = out['output']
-            out_arr[offset:offset+batch_l] = output[0][:batch_l]
-            print(ctx)
+            for k, v in out.items():
+                total[k][offset:offset+batch_l] = v[0][:batch_l]
 
-        return out_arr
+        return total

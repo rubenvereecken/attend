@@ -12,6 +12,7 @@ class AttendModel():
             time_steps=None, attention_impl=None,
             dropout=None,
             use_dropout=True,
+            final_sigmoid=False,
             debug=True):
         """
 
@@ -31,6 +32,7 @@ class AttendModel():
         self.H = num_hidden
         self.dropout = dropout
         self.use_dropout_for_training = use_dropout
+        self.final_sigmoid = final_sigmoid
 
         # If None, it's variable, if an int, it's known. Can also be Tensor
         self.T = time_steps
@@ -174,6 +176,8 @@ class AttendModel():
 
                 with tf.name_scope(decode_lstm_scope or 'decode_lstm_step') as decode_lstm_scope:
                     output = self._decode(c, dropout=True, reuse=(t!=0))
+                    if self.final_sigmoid:
+                        output = tf.nn.sigmoid(output)
                     outputs.append(output)
             outputs = tf.squeeze(tf.stack(outputs, axis=1), axis=[2]) # B x T
             if self.attention_layer:
