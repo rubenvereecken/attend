@@ -56,6 +56,7 @@ class AttendSolver():
                 ctx, _, all_loss, total_loss = \
                     sess.run([context_ops, loss_ops['batch'], loss_ops['all'], loss_ops['total']])
                 keys = list(map(lambda x: x.decode(), ctx['key']))
+                log.debug('%s', keys)
 
                 for i, key in enumerate(keys):
                     if key not in seq_lengths_by_key:
@@ -197,7 +198,7 @@ class AttendSolver():
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
 
-        # g.finalize() # No ops can be added after this
+        g.finalize() # No ops can be added after this
 
         t_start = time()
         log.info('Started training')

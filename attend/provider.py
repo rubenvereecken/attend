@@ -89,9 +89,6 @@ class Provider():
 
                 example = self.preprocess_example(example)
 
-                # NOTE temporarily disabled because in case of manual feeding
-                # you lose the time dimension
-
                 initial_states = self._prepare_initial()
                 input_sequences = { 'images': example }
                 if not target is None:
@@ -227,6 +224,7 @@ class ManualStateSaver:
     def save_state(self, key, value, name=None):
         shape = self._state_shapes[key]
         value = tf.reshape(value, [-1, np.prod(shape.as_list()).astype(int)])
+        value = tf.Print(value, [self._key], 'Saving {} '.format(key))
         return self._states[key].insert(self._key, value)
 
     @property
