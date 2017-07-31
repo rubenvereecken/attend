@@ -56,7 +56,6 @@ class AttendSolver():
                 ctx, _, all_loss, total_loss = \
                     sess.run([context_ops, loss_ops['batch'], loss_ops['all'], loss_ops['total']])
                 keys = list(map(lambda x: x.decode(), ctx['key']))
-                log.debug('%s', keys)
 
                 for i, key in enumerate(keys):
                     if key not in seq_lengths_by_key:
@@ -124,9 +123,9 @@ class AttendSolver():
                 val_outputs = val_out['output']
                 val_losses = self.model.calculate_losses(val_outputs,
                         val_provider.targets, val_ctx['key'], val_ctx['length'], 'val_loss')
-                g.add_to_collection('val_outputs', val_outputs)
-                for v in val_ctx.values():
-                    g.add_to_collection('val_context', v)
+                # g.add_to_collection('val_outputs', val_outputs)
+                # for v in val_ctx.values():
+                #     g.add_to_collection('val_context', v)
                 # g.add_to_collection('val_losses', val_losses)
 
             if debug:

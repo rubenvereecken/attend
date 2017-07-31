@@ -224,7 +224,7 @@ class ManualStateSaver:
     def save_state(self, key, value, name=None):
         shape = self._state_shapes[key]
         value = tf.reshape(value, [-1, np.prod(shape.as_list()).astype(int)])
-        value = tf.Print(value, [self._key], 'Saving {} '.format(key))
+        # value = tf.Print(value, [self._key], message='Saving {} '.format(key))
         return self._states[key].insert(self._key, value)
 
     @property

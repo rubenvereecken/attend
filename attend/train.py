@@ -56,7 +56,7 @@ if __name__ == '__main__':
         val_args['shuffle_examples'] = False # Don't shuffle validation data
         val_args['batch_size'] = all_args['val_batch_size']
         all_args['val_provider'] = FileProvider([runner.args.val_data],
-                **pick(all_args, params_for(Provider.__init__)))
+                **pick(val_args, params_for(Provider.__init__)))
     all_args['model'] = AttendModel(**pick(all_args, params_for(AttendModel.__init__)))
 
     solver = init_with(AttendSolver, all_args)
