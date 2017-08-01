@@ -13,3 +13,4 @@ from .log import Log
 from .solver import AttendSolver
 from .model import AttendModel
 from .encoder import Encoder
+from .evaluate import Evaluator

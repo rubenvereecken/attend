@@ -8,15 +8,22 @@ from attend import Encoder, AttendSolver, AttendModel
 from attend.provider import Provider, InMemoryProvider
 
 class Evaluator:
-    def __init__(self, encoder, provider, model, scope=None):
+    def __init__(self, encoder, provider, model, args=None, scope=None):
         self.encoder = encoder
         self.provider = provider
         self.model = model
+        self.args = args
         self.scope = scope or ''
 
         self.graph = tf.Graph()
         self.out_ops, self.ctx_ops = self._build_model()
+
         self.sess = tf.Session(graph=self.graph)
+        from tensorflow.python import debug as tf_debug
+        self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
+
+        with self.graph.as_default():
+            self.reset_op = self.provider.state_saver.reset_states()
 
 
     def _build_model(self):
@@ -57,8 +64,6 @@ class Evaluator:
 
         with open(log_dir + '/args.cson', 'r') as f:
             args = cson.load(f)
-            import pdb
-            pdb.set_trace()
 
         encoder = util.init_with(Encoder, args)
         provider = InMemoryProvider(encoder=encoder, dim_feature=feat_dim,
@@ -66,7 +71,7 @@ class Evaluator:
         model = AttendModel(provider, encoder,
                 **util.pick(args, util.params_for(AttendModel.__init__)))
 
-        evaluator = cls(encoder, provider, model)
+        evaluator = cls(encoder, provider, model, args)
         saver = tf.train.Saver(evaluator.variables)
         saver.restore(evaluator.sess, checkpoint)
         return evaluator
@@ -91,6 +96,7 @@ class Evaluator:
                 })
 
         state_saver = self.provider.state_saver
+        keys = []
 
         for i in range(n_batches):
             offset = i * T
@@ -110,5 +116,10 @@ class Evaluator:
             out, ctx = self.sess.run((self.out_ops, self.ctx_ops), feed_dict=feed_dict)
             for k, v in out.items():
                 total[k][offset:offset+batch_l] = v[0][:batch_l]
+            keys.append(ctx['key'][0].decode())
+
+        # Reset saved states for this sequence
+        keys = list(set(keys))
+        self.sess.run(self.reset_op, { state_saver._key: keys })
 
         return total
