@@ -223,6 +223,8 @@ class AttendModel():
                 'key': self._extract_keys(state_saver.key),
                 }
 
+        assert outputs.shape.ndims == 3, 'B x T x 1'
+
         out = {
                 'output': outputs,
                 }
@@ -246,11 +248,16 @@ class AttendModel():
 
 
     def calculate_loss(self, predictions, targets, lengths=None):
+        # predictions.shape.assert_is_compatible_with(targets)
+
         with tf.variable_scope('loss'):
             T = tf.shape(targets)[1]
-            targets = tf.squeeze(targets) # Get rid of trailing 1-dimensions
+            # targets = tf.squeeze(targets) # Get rid of trailing 1-dimensions
             # Tails of sequences are likely padded, so create a mask to ignore padding
             mask = tf.cast(tf.sequence_mask(lengths, T), tf.int32) if lengths is not None else None
+            if predictions.shape.ndims > 2:
+                mask = tf.expand_dims(mask, -1)
+
             loss = self.loss_fun(targets, predictions, weights=mask)
 
         # if self.debug:
@@ -264,7 +271,8 @@ class AttendModel():
         from attend import metrics
 
         with tf.variable_scope(scope):
-            targets = tf.squeeze(targets, axis=2)
+            targets = tf.squeeze(targets, axis=2, name='squeeze_target')
+            predictions = tf.squeeze(predictions, axis=2, name='squeeze_pred')
             shape = tf.shape(predictions)
             B, T = shape[0], shape[1]
             T = self.T
@@ -273,6 +281,8 @@ class AttendModel():
                     name='length_table')
 
             mask = tf.cast(tf.sequence_mask(lengths, T), tf.float32)
+            # if predictions.shape.ndims > 2:
+            #     mask = tf.expand_dims(mask, -1)
             length_update = length_table.insert(keys, tf.cast(lengths, tf.int64))
 
             out = dict(batch={}, all={}, total={})
