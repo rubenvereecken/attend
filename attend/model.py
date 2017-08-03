@@ -97,6 +97,9 @@ class AttendModel():
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
 
+        assert targets is None or targets.shape.ndims == 3, \
+                'The target is assumed to be B x T x 1'
+
         use_dropout = is_training and self.use_dropout_for_training
         if is_training:
             log.debug('=== TRAINING ===')
@@ -130,7 +133,7 @@ class AttendModel():
             c = state_saver.state('lstm_c')
             h = state_saver.state('lstm_h')
             history = state_saver.state('history')
-            # last_out = state_saver.state('last_out')
+            last_out = state_saver.state('last_out')
         else:
             c, h = self._initial_lstm(x)
 
@@ -149,8 +152,8 @@ class AttendModel():
             decode_lstm_scope = None
             for t in range(T):
                 if t == 0:
-                    # Fill with null values first go because there is no previous
-                    true_prev_target = tf.zeros([batch_size, 1]) # T x 1
+                    # Get the last output from previous batch
+                    true_prev_target = last_out
                 elif is_training:
                     # Feed back in last true input
                     true_prev_target = targets[:, t-1]
@@ -180,7 +183,8 @@ class AttendModel():
                     if self.final_sigmoid:
                         output = tf.nn.sigmoid(output)
                     outputs.append(output)
-            outputs = tf.squeeze(tf.stack(outputs, axis=1), axis=[2]) # B x T
+            # outputs = tf.squeeze(tf.stack(outputs, axis=1), axis=[2]) # B x T
+            outputs = tf.stack(outputs, axis=1) # B x T x 1
             if self.attention_layer:
                 contexts = tf.stack(contexts, axis=1)
                 alphas = tf.stack(alphas, axis=1)
@@ -196,7 +200,8 @@ class AttendModel():
                     state_saver.save_state('lstm_h', h, 'lstm_h'),
                     state_saver.save_state('first',
                         tf.zeros([batch_size], dtype=tf.bool), 'first'),
-                    state_saver.save_state('history', x, 'history')
+                    state_saver.save_state('history', x, 'history'),
+                    state_saver.save_state('last_out', outputs[:,-1], 'last_out')
                 )
 
                 control_deps.append(save_state)

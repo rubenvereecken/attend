@@ -56,7 +56,7 @@ class Provider():
                 'lstm_h': tf.zeros([self.H], dtype=tf.float32),
                 # Keep the previous batch around too for extra history
                 'history': tf.zeros([self.T, np.prod(self.dim_encoded)], dtype=tf.float32),
-                # 'last_out': tf.zeros([np.prod(self.dim_encoded)], dtype=tf.float32),
+                'last_out': tf.zeros([1], dtype=tf.float32),
                 'first': tf.constant(True)
             }
 
@@ -82,6 +82,7 @@ class Provider():
             # for k, v in initial_states.items():
             #     if k in ['first', 'history']: continue
             #     initial_states[k] = tf.Print(v, [tf.reduce_mean(v)], message='mean learned {} '.format(k))
+            # TODO not actually learning anything :((
 
             return initial_states
 
