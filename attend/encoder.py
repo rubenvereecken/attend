@@ -11,10 +11,14 @@ class Encoder():
     def __init__(self, batch_size, encode_hidden_units=0, time_steps=None,
                  debug=True, conv_impl=None, dense_layer=0, dropout=.75,
                  use_maxnorm=True,
-                 dense_spec=None
+                 dense_spec=None,
+                 encode_lstm=None
                  ):
         self.debug = debug
-        self.encode_lstm = encode_hidden_units > 0
+        if encode_lstm is None:
+            self.encode_lstm = encode_hidden_units > 0
+        else:
+            self.encode_lstm = encode_lstm
         self.batch_size = batch_size # TODO this will go
 
         assert conv_impl in Encoder.ALLOWED_CONV_IMPLS
@@ -43,13 +47,13 @@ class Encoder():
     def __call__(self, x, state_saver=None, use_dropout=True):
         with tf.variable_scope('encoder'):
             x = self.conv_network(x)
-            if self.dense_layer:
-                log.debug('Using a dense layer in the encoder')
-                x = self.dense(x, use_dropout)
-            elif self.dense_spec:
+            if self.dense_spec:
                 log.debug('Building dense from spec `%s`', self.dense_spec)
                 x = self.dense_from_spec(x, self.dense_spec, use_dropout)
-            if self.encode_hidden_units > 0:
+            elif self.dense_layer:
+                log.debug('Using a dense layer in the encoder')
+                x = self.dense(x, use_dropout)
+            if self.encode_lstm > 0:
                 x = self._encode_lstm(x, state_saver, use_dropout)
             return x
 
@@ -59,6 +63,7 @@ class Encoder():
         if self.encode_lstm:
             return self.encode_hidden_units
         else:
+            assert not input_dims is None, 'Require input_dims to not be None'
             g = tf.Graph()
             with g.as_default():
                 x = tf.placeholder(dtype=tf.float32, shape=[None, None, *input_dims])

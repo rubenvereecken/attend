@@ -101,8 +101,7 @@ class AttendSolver():
         g = tf.get_default_graph()
 
         # For now, its results are stored inside the provider
-        provider.batch_sequences_with_states()
-        # provider.batch_static_pad()
+        provider.batch_sequences_with_states(is_training=True)
 
         global_step = tf.Variable(0, trainable=False, name='global_step')
 
@@ -115,7 +114,7 @@ class AttendSolver():
         if not val_provider is None:
             n_vars = len(tf.trainable_variables())
 
-            val_provider.batch_sequences_with_states(1,
+            val_provider.batch_sequences_with_states(1, is_training=False,
                     collection=attend.GraphKeys.VAL_INPUT_RUNNERS)
             with tf.variable_scope(tf.get_variable_scope(), reuse=True):
                 # tf.get_variable_scope().reuse_variables()
@@ -138,7 +137,6 @@ class AttendSolver():
             tf.train.export_meta_graph(filename=log_dir + '/eval_model.meta',
                     graph=eval_graph, as_text=True)
 
-
         with tf.variable_scope('optimizer', reuse=False):
             optimizer = self.optimizer(learning_rate=self.learning_rate)
             # train_op = optimizer.minimize(loss_op, global_step=global_step,
@@ -160,8 +158,8 @@ class AttendSolver():
 
         # Summary op
         tf.summary.scalar('batch_loss', loss_op, family='train')
-        for var in tf.trainable_variables():
-            tf.summary.histogram(var.op.name, var)
+        # for var in tf.trainable_variables():
+        #     tf.summary.histogram(var.op.name, var)
         # for grad, var in grads_and_vars:
         #     tf.summary.histogram(var.op.name+'/gradient', grad)
 
@@ -284,7 +282,7 @@ class AttendSolver():
 
         with graph.as_default():
             with tf.variable_scope(scope, reuse=False):
-                provider.batch_sequences_with_states()
+                provider.batch_sequences_with_states(is_training=False)
                 out_ops, ctx_ops = self.model.build_model(provider, False)
 
         return graph

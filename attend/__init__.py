@@ -5,6 +5,7 @@ class GraphKeys:
     VAL_INPUT_RUNNERS = 'val_input_runners'
     VAL_SUMMARIES = 'val_summaries'
     STATS_SUMMARIES = 'stats_summaries'
+    INITIAL_STATES = 'initial_states'
 
 
 from .report import SummaryProducer

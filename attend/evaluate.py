@@ -34,6 +34,12 @@ class Evaluator:
         return out_ops, ctx_ops
 
 
+    def write_graph(self, log_dir):
+        import os
+        os.makedirs(log_dir, exist_ok=True)
+        writer = tf.summary.FileWriter(log_dir, graph=self.graph)
+
+
     def initialize_variables(self):
         self.init_op = tf.group(tf.global_variables_initializer(),
                                 tf.local_variables_initializer())
@@ -43,9 +49,9 @@ class Evaluator:
     def variables(self):
         return self.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope)
 
-    def __del__(self):
-        print('Cleaning up session')
-        self.sess.close()
+#     def __del__(self):
+#         print('Cleaning up session')
+#         self.sess.close()
 
 
     @classmethod
@@ -96,7 +102,10 @@ class Evaluator:
                 })
 
         state_saver = self.provider.state_saver
+        key = '{}:{}'.format(key, '0')
         keys = []
+
+        # history = np.zeros(())
 
         for i in range(n_batches):
             offset = i * T
@@ -106,11 +115,13 @@ class Evaluator:
 
             feed_dict = { state_saver._sequences['images']: [batch],
                         # state_saver._original_key: [key],
-                        state_saver._key: ['{:05d}_of_{:05d}:{}:{}'.format(i,
-                            n_batches, key, '0')],
+                        state_saver._full_key: ['{:05d}_of_{:05d}:{}'.format(i,
+                            n_batches, key)],
+                        state_saver._key: [key],
                         state_saver._length: [batch_l],
                         state_saver._sequence: [i],
                         state_saver._sequence_count: [n_batches],
+                        # state_saver.history:
                         }
 
             out, ctx = self.sess.run((self.out_ops, self.ctx_ops), feed_dict=feed_dict)

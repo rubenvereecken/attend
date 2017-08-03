@@ -130,6 +130,7 @@ class AttendModel():
             c = state_saver.state('lstm_c')
             h = state_saver.state('lstm_h')
             history = state_saver.state('history')
+            # last_out = state_saver.state('last_out')
         else:
             c, h = self._initial_lstm(x)
 
