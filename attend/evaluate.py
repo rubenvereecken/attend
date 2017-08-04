@@ -17,10 +17,13 @@ class Evaluator:
 
         self.graph = tf.Graph()
         self.out_ops, self.ctx_ops = self._build_model()
+        self.loss_ops = self._build_losses()
 
         self.sess = tf.Session(graph=self.graph)
         # from tensorflow.python import debug as tf_debug
         # self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
+
+        self.sess.run(self._variables_initializer('losses'))
 
         with self.graph.as_default():
             self.reset_op = self.provider.state_saver.reset_states()
@@ -34,16 +37,33 @@ class Evaluator:
         return out_ops, ctx_ops
 
 
+    def _build_losses(self):
+        with self.graph.as_default():
+            # with tf.variable_scope(self.scope):
+            loss_ops = self.model.calculate_losses(self.out_ops['output'], self.provider.targets,
+                    self.ctx_ops['key'], self.ctx_ops['length'], 'losses')
+        return loss_ops
+
+
     def write_graph(self, log_dir):
         import os
         os.makedirs(log_dir, exist_ok=True)
         writer = tf.summary.FileWriter(log_dir, graph=self.graph)
 
 
-    def initialize_variables(self):
-        self.init_op = tf.group(tf.global_variables_initializer(),
-                                tf.local_variables_initializer())
-        self.sess.run(self.init_op)
+    def _variables_initializer(self, scope=None):
+        with self.graph.as_default():
+            init_op = tf.variables_initializer(
+                    tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope) + \
+                    tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope=scope))
+
+        return init_op
+
+
+    # def initialize_variables(self):
+    #     self.init_op = tf.group(tf.global_variables_initializer(),
+    #                             tf.local_variables_initializer())
+    #     self.sess.run(self.init_op)
 
     @property
     def variables(self):
@@ -83,7 +103,7 @@ class Evaluator:
         return evaluator
 
 
-    def evaluate(self, sequence, key='input_seq'):
+    def evaluate(self, sequence, targets=None, key='input_seq'):
         """
         In memory evaluation
         """
@@ -114,17 +134,27 @@ class Evaluator:
             batch = util.pad(batch, T-batch_l)
 
             feed_dict = { state_saver._sequences['images']: [batch],
-                        # state_saver._original_key: [key],
                         state_saver._full_key: ['{:05d}_of_{:05d}:{}'.format(i,
                             n_batches, key)],
                         state_saver._key: [key],
                         state_saver._length: [batch_l],
                         state_saver._sequence: [i],
                         state_saver._sequence_count: [n_batches],
-                        # state_saver.history:
                         }
 
-            out, ctx = self.sess.run((self.out_ops, self.ctx_ops), feed_dict=feed_dict)
+            ctx_ops = self.ctx_ops.copy()
+
+            if not targets is None:
+                target_batch = targets[offset:offset+T]
+                target_batch = util.pad(target_batch, T-batch_l)
+                feed_dict[state_saver._sequences['conflict']] = [target_batch]
+
+                ctx_ops.update(self.loss_ops['context'])
+                out, ctx, total_loss = self.sess.run((self.out_ops, ctx_ops, self.loss_ops['total']), feed_dict=feed_dict)
+
+            else:
+                out, ctx = self.sess.run((self.out_ops, ctx_ops), feed_dict=feed_dict)
+
             for k, v in out.items():
                 total[k][offset:offset+batch_l] = v[0][:batch_l]
             keys.append(ctx['key'][0].decode())
@@ -132,5 +162,8 @@ class Evaluator:
         # Reset saved states for this sequence
         keys = list(set(keys))
         self.sess.run(self.reset_op, { state_saver._key: keys })
+
+        if not targets is None:
+            total.update(total_loss)
 
         return total

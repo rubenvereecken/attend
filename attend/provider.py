@@ -115,17 +115,17 @@ class Provider():
                     input_sequences[self.feat_name] = target
 
                 batch = self._batch_sequences_with_states(
-                        input_sequences= input_sequences,
-                        input_key      = context['key'] + ':', # : for split
-                        input_context  = context,
-                        initial_states = initial_states,
-                        input_length   = context['num_frames'],
-                        num_unroll     = self.time_steps,
-                        batch_size     = self.batch_size,
-                        num_threads    = 2, # TODO change
-                        capacity       = self.batch_size * 4,
-                        name           = 'batch_seq_with_states',
-                        make_keys_unique = True,
+                        input_sequences   = input_sequences,
+                        input_key         = context['key'] + ':', # : for split
+                        input_context     = context,
+                        initial_states    = initial_states,
+                        input_length      = context['num_frames'],
+                        num_unroll        = self.time_steps,
+                        batch_size        = self.batch_size,
+                        num_threads       = 2, # TODO change
+                        capacity          = self.batch_size * 4,
+                        name              = 'batch_seq_with_states',
+                        make_keys_unique  = True,
                         allow_small_batch = True # Required otherwise blocks
                         )
                 example_batch, target_batch = batch.sequences['images'], batch.sequences.get(self.feat_name, None)
@@ -246,12 +246,17 @@ class InMemoryProvider(Provider):
                     'features': tf.placeholder(tf.float32,
                         shape=(None, None, *self.dim_feature),
                         name='features'),
+                    # 'targets': None,
                     'key': tf.placeholder(tf.string, shape=(None,),
                         name='key'),
                     'num_frames': tf.placeholder(tf.int64, shape=(None,),
                         name='num_frames'),
                     }
-            return self.placeholders['features'], None, \
+
+            self.placeholders['targets'] = tf.placeholder(tf.float32,
+                    shape=(None, None,), name='targets')
+
+            return self.placeholders['features'], self.placeholders['targets'], \
                 { k: self.placeholders[k] for k in ['key', 'num_frames'] }
 
     def preprocess_example(self, example):
