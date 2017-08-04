@@ -1,5 +1,11 @@
 import inspect
 import numpy as np
+import attend
+import time
+from functools import partial
+
+# parse_timestamp = partial(time.strptime, format=attend.TIMESTAMP_FORMAT)
+parse_timestamp = lambda x: time.strptime(x, attend.TIMESTAMP_FORMAT)
 
 def pick(dic, l):
     '''

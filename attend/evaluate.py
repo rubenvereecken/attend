@@ -19,8 +19,8 @@ class Evaluator:
         self.out_ops, self.ctx_ops = self._build_model()
 
         self.sess = tf.Session(graph=self.graph)
-        from tensorflow.python import debug as tf_debug
-        self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
+        # from tensorflow.python import debug as tf_debug
+        # self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
 
         with self.graph.as_default():
             self.reset_op = self.provider.state_saver.reset_states()
@@ -93,7 +93,7 @@ class Evaluator:
         l = sequence.shape[0]
         n_batches = np.ceil(l / T).astype(int)
 
-        total = { 'output': np.empty((l,)) }
+        total = { 'output': np.empty((l,1)) }
 
         if 'context' in self.out_ops:
             total.update({

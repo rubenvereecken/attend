@@ -47,7 +47,7 @@ class AttendSolver():
         losses_by_loss_by_key = {k:OrderedDict() for k in loss_names}
         seq_lengths_by_key = OrderedDict()
 
-        start = time()
+        start = time.time()
 
         try:
             for i in range(1000000000):
@@ -64,7 +64,7 @@ class AttendSolver():
                 if coord.should_stop():
                     log.warning('Validation stopping because coord said so')
         except tf.errors.OutOfRangeError:
-            log.info('Finished validation in %.2fs', time() - start)
+            log.info('Finished validation in %.2fs', time.time() - start)
 
         mean_by_loss = { k: np.mean(v) for k, v in all_loss.items() }
         mean_by_loss.update(total_loss)
@@ -197,7 +197,7 @@ class AttendSolver():
 
         g.finalize() # No ops can be added after this
 
-        t_start = time()
+        t_start = time.time()
         log.info('Started training')
         losses = np.empty(self.stats_every) # Keep losses to average every so often
         global_step_value = 0
@@ -207,7 +207,7 @@ class AttendSolver():
             for epoch_i in progress_wrapper(range(num_epochs)):
                 for step_i in progress_wrapper(range(steps_per_epoch)):
                     if (global_step_value) % self.stats_every == 0:
-                        t_stats = time()
+                        t_stats = time.time()
                     try:
                         # Run batch_loss summary op together with loss_op
                         # Otherwise it will recompute the loss separately
@@ -225,7 +225,7 @@ class AttendSolver():
                     # Runtime stats every so often
                     if global_step_value % self.stats_every == 0:
                         stats_summary = self.summary_producer.create_stats_summary(
-                                sess, time() - t_stats, global_step_value,
+                                sess, time.time() - t_stats, global_step_value,
                                 np.mean(losses))
                         summary_writer.add_summary(stats_summary, global_step_value)
 
@@ -258,10 +258,10 @@ class AttendSolver():
 
         except tf.errors.OutOfRangeError:
             log.info('Done training -- epoch limit reached')
-            notify('Done training', 'Took {:.1f}s'.format(time() - t_start))
+            notify('Done training', 'Took {:.1f}s'.format(time.time() - t_start))
         except Exception as e:
             log.exception(e)
-            notify('Error occurred', 'Took {:.1f}s'.format(time() - t_start))
+            notify('Error occurred', 'Took {:.1f}s'.format(time.time() - t_start))
         finally:
             log.debug('Joining threads - ...')
             # Requests the coordinator to stop, joins threads

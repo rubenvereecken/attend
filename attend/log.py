@@ -1,6 +1,9 @@
 import logging
 import sys
+import os
 import cson
+
+from attend import util
 
 class Log:
     filename = None
@@ -82,3 +85,23 @@ class Log:
         file_path = cls.log_dir + '/{}.cson'.format(file_name)
         with open(file_path, 'w') as f:
             cson.dump(dict(d), f, sort_keys=True, indent=4)
+
+    @classmethod
+    def last_logdir(cls, path, prefix=None):
+        import re
+        r = re.compile('^((?P<prefix>.*?)_)?(?P<time_stamp>[0-9]{2}-[0-9]{2}-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2})')
+        dirs = os.listdir(path)
+        matches = zip(map(lambda s: r.match(s), dirs), dirs)
+        matches = filter(lambda x: x[0], matches)
+        matches = map(lambda x: (x[0].groupdict(), x[1]), matches)
+
+        if not prefix is None:
+            matches = filter(lambda m: m[0]['prefix'] == prefix, matches)
+
+        matches = map(lambda s: (util.parse_timestamp(s[0]['time_stamp']), s[1]), matches)
+        matches = sorted(matches, key=lambda x: x[0])
+
+        if len(matches) > 0:
+            return path + '/' + matches[-1][1]
+
+        return None
