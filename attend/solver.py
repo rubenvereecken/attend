@@ -88,6 +88,7 @@ class AttendSolver():
               log_dir,
               val_provider=None,
               debug=False,
+              save_eval_graph=True,
               show_progress_bar=None):
 
         if show_progress_bar is None and debug is False:
@@ -130,20 +131,20 @@ class AttendSolver():
             if debug:
                 assert n_vars == len(tf.trainable_variables()), 'New vars were created for val'
 
-        # TODO pick this up one day again
-        # https://github.com/tensorflow/tensorflow/issues/11888
-        if True:
+        if save_eval_graph:
             eval_graph = self.create_test_graph(**provider.__dict__)
-            # tf.train.export_meta_graph(filename=log_dir + '/eval_model.meta',
-                    # graph=eval_graph, as_text=True)
-            tf.train.write_graph(eval_graph, log_dir, 'eval_model.graph.proto',
-                    as_text=False)
+            # tf.train.write_graph(eval_graph, log_dir, 'eval_model.graph.proto',
+            #         as_text=False)
+            # These saveables prevent the graph from being reconstructed so remove
+            # for serialization
             saveables = eval_graph.get_collection_ref('saveable_objects')
             backup = saveables.copy()
             saveables.clear()
             tf.train.export_meta_graph(log_dir + '/eval_model.meta.proto',
-                    graph=eval_graph, as_text=True, clear_devices=True)
+                    graph=eval_graph, as_text=False, clear_devices=True)
+            eval_graph.get_collection_ref('saveable_objects').extend(backup)
             log.info('Exported eval_model')
+
 
         with tf.variable_scope('optimizer', reuse=False):
             optimizer = self.optimizer(learning_rate=self.learning_rate)

@@ -11,13 +11,13 @@ class Defaults:
         conv_impl                 = 'none',
         encode_lstm               = True,
         encode_hidden_units       = 256,
-        # dense_layer               = 1,
-        dense_spec = '-,relu',
+        # dense_layer             = 1,
+        dense_spec                = '-,relu',
 
         update_rule               = 'adam',
 
-        use_dropout = True,
-        dropout = .75,
+        use_dropout               = True,
+        dropout                   = .75,
 
         shuffle_examples          = True,
         shuffle_examples_capacity = None,
@@ -25,15 +25,17 @@ class Defaults:
         shuffle_splits            = False,
         shuffle_splits_capacity   = None,
 
-        stats_every = 100,
-        gen_log_dir = True,
+        stats_every               = 100,
+        gen_log_dir               = True,
+        save_eval_graph           = True,
 
-        final_sigmoid = False
+        final_sigmoid             = False
     )
 
     debug_params = dict(
         shuffle_examples = True,
-        encode_lstm = False
+        encode_lstm      = False,
+        save_eval_graph  = False
         )
 
     def __init__(self, debug=False):
