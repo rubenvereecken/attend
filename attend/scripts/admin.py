@@ -9,6 +9,6 @@ def logdirs_without_checkpoints(path):
     dirs = list(filter(lambda d: not os.path.islink(d) and os.path.isdir(d), dirs))
 
     matches = zip(map(lambda d: tf.train.latest_checkpoint(d), dirs), dirs)
-    matches = filter(lambda d: d[0] is None, matches)
+    matches = list(filter(lambda d: d[0] is None, matches))
 
-    return list(zip(*matches))[1]
+    return list(zip(*matches))[1] if len(matches) > 0 else []

@@ -298,9 +298,4 @@ class AttendSolver():
                 reset_op = provider.state_saver.reset_states()
                 tf_util.add_to_collection(attend.GraphKeys.STATE_RESET, reset_op, graph)
 
-
         return graph
-
-
-
-
