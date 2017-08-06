@@ -27,7 +27,7 @@ class SummaryProducer:
     def mean_scalar(self):
         mean_summaries = [ tf.summary.scalar(loss_name + '/total',
             self.mean_losses[loss_name],
-            collections=attend.GraphKeys.VAL_SUMMARIES,
+            collections=[attend.GraphKeys.VAL_SUMMARIES],
             family='validation') for loss_name in self.loss_names]
 
         return mean_summaries
@@ -35,12 +35,12 @@ class SummaryProducer:
     def mean_hist(self):
         mean_hists = [ tf.summary.histogram(loss_name + '/mean_hist',
             self.mean_hists[loss_name],
-            collections=attend.GraphKeys.VAL_SUMMARIES,
+            collections=[attend.GraphKeys.VAL_SUMMARIES],
             family='validation') for loss_name in self.loss_names ]
 
         mean_hists_norm = [ tf.summary.histogram(loss_name + '/mean_norm',
             self.mean_hists_norm[loss_name],
-            collections=attend.GraphKeys.VAL_SUMMARIES,
+            collections=[attend.GraphKeys.VAL_SUMMARIES],
             family='validation') for loss_name in self.loss_names ]
 
         return mean_hists + mean_hists_norm

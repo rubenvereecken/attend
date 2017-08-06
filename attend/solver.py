@@ -6,7 +6,7 @@ from collections import OrderedDict
 
 from .util import *
 from attend.log import Log; log = Log.get_logger(__name__)
-from attend import util
+from attend import util, tf_util
 import attend
 
 class AttendSolver():
@@ -132,10 +132,18 @@ class AttendSolver():
 
         # TODO pick this up one day again
         # https://github.com/tensorflow/tensorflow/issues/11888
-        if False:
+        if True:
             eval_graph = self.create_test_graph(**provider.__dict__)
-            tf.train.export_meta_graph(filename=log_dir + '/eval_model.meta',
-                    graph=eval_graph, as_text=True)
+            # tf.train.export_meta_graph(filename=log_dir + '/eval_model.meta',
+                    # graph=eval_graph, as_text=True)
+            tf.train.write_graph(eval_graph, log_dir, 'eval_model.graph.proto',
+                    as_text=False)
+            saveables = eval_graph.get_collection_ref('saveable_objects')
+            backup = saveables.copy()
+            saveables.clear()
+            tf.train.export_meta_graph(log_dir + '/eval_model.meta.proto',
+                    graph=eval_graph, as_text=True, clear_devices=True)
+            log.info('Exported eval_model')
 
         with tf.variable_scope('optimizer', reuse=False):
             optimizer = self.optimizer(learning_rate=self.learning_rate)
@@ -184,6 +192,8 @@ class AttendSolver():
         # with sv.managed_session(config=config) as sess:
         train_sess  = tf.Session(graph=g)
         sess = train_sess
+        # from tensorflow.python import debug as tf_debug
+        # sess = tf_debug.LocalCLIDebugWrapperSession(sess, thread_name_filter="MainThread$")
         sess.run(init_op)
 
         saver = tf.train.Saver()
@@ -284,6 +294,9 @@ class AttendSolver():
             with tf.variable_scope(scope, reuse=False):
                 provider.batch_sequences_with_states(is_training=False)
                 out_ops, ctx_ops = self.model.build_model(provider, False)
+                reset_op = provider.state_saver.reset_states()
+                tf_util.add_to_collection(attend.GraphKeys.STATE_RESET, reset_op, graph)
+
 
         return graph
 

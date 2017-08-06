@@ -140,6 +140,10 @@ class Provider():
                 self.features    = example_batch
                 self.targets     = target_batch
                 self.state_saver = batch
+                g.add_to_collection(attend.GraphKeys.INPUT, self.features)
+                g.add_to_collection(attend.GraphKeys.INPUT, self.targets)
+                # TODO maybe some day serialize the state saver
+                # g.add_to_collection(attend.GraphKeys.STATE, self.state_saver)
                 # This fixes an expectation of targets being single-dimensional further down the line
                 # So like [?, T, 1] instead of just [?, T]
                 if not self.targets is None and len(self.targets.shape) <= 2:

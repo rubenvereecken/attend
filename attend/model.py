@@ -2,6 +2,8 @@ import numpy as np
 import tensorflow as tf
 
 from attend.log import Log; log = Log.get_logger(__name__)
+import attend
+from attend import tf_util
 
 
 class AttendModel():
@@ -24,9 +26,6 @@ class AttendModel():
         self.provider = provider
         self.encoder = encoder
 
-        # self.batch_size = batch_size
-        # self.dim_feature = provider.dim_feature
-        # self.dim_feature = [224, 224, 3]
         self.dim_feature = provider.dim_feature
         self.D = np.prod(self.dim_feature) # Feature dimension when flattened
         self.H = num_hidden
@@ -186,8 +185,8 @@ class AttendModel():
             # outputs = tf.squeeze(tf.stack(outputs, axis=1), axis=[2]) # B x T
             outputs = tf.stack(outputs, axis=1) # B x T x 1
             if self.attention_layer:
-                contexts = tf.stack(contexts, axis=1)
-                alphas = tf.stack(alphas, axis=1)
+                contexts = tf.stack(contexts, axis=1, name='context')
+                alphas = tf.stack(alphas, axis=1, name='alpha')
 
         control_deps = []
 
@@ -210,7 +209,7 @@ class AttendModel():
                 # into the rest of the computation graph, but also makes it messy
                 with tf.control_dependencies(control_deps):
                     lengths = state_saver.length
-                    outputs = tf.identity(outputs) # Tricksy way of injecting dependency
+                    outputs = tf.identity(outputs, name='output') # Tricksy way of injecting dependency
         else:
             assert len(control_deps) == 0
 
@@ -222,17 +221,21 @@ class AttendModel():
                 # 'key': state_saver.key,
                 'key': self._extract_keys(state_saver.key),
                 }
+        tf_util.add_to_collection(attend.GraphKeys.CONTEXT, [*context.values()])
 
         assert outputs.shape.ndims == 3, 'B x T x 1'
 
         out = {
                 'output': outputs,
                 }
+        tf_util.add_to_collection(attend.GraphKeys.OUTPUT, outputs)
+
         if self.attention_layer:
             out.update({
                 'context': contexts,
                 'alpha': alphas,
                 })
+            tf_util.add_to_collection(attend.GraphKeys.OUTPUT, [contexts, alphas])
 
         return out, context
 
@@ -244,6 +247,7 @@ class AttendModel():
             splits = tf.reshape(splits.values, ([-1,3])) # Reshape per key
             splits = splits[:,1:] # Drop the sequence info
             keys = tf.map_fn(lambda x: tf.string_join(tf.unstack(x), ':'), splits)
+            keys = tf.identity(keys, name='key')
             return keys
 
 
@@ -271,8 +275,10 @@ class AttendModel():
         from attend import metrics
 
         with tf.variable_scope(scope):
-            targets = tf.squeeze(targets, axis=2, name='squeeze_target')
-            predictions = tf.squeeze(predictions, axis=2, name='squeeze_pred')
+            if targets.shape.ndims > 2:
+                targets = tf.squeeze(targets, axis=2, name='squeeze_target')
+            if predictions.shape.ndims > 2:
+                predictions = tf.squeeze(predictions, axis=2, name='squeeze_pred')
             shape = tf.shape(predictions)
             B, T = shape[0], shape[1]
             T = self.T

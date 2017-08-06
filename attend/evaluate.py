@@ -3,44 +3,55 @@ import numpy as np
 import cson
 import os
 
-from attend import util
+import attend
+from attend import util, tf_util
 from attend import Encoder, AttendSolver, AttendModel
 from attend.provider import Provider, InMemoryProvider
 
+
 class Evaluator:
-    def __init__(self, encoder, provider, model, args=None, scope=None):
-        self.encoder = encoder
-        self.provider = provider
-        self.model = model
+    def __init__(self, log_dir, args=None, scope=None):
+        self.log_dir = log_dir
         self.args = args
         self.scope = scope or ''
 
         self.graph = tf.Graph()
+        self.sess = tf.Session(graph=self.graph)
+
+
+    def initialize(self):
         self.out_ops, self.ctx_ops = self._build_model()
         self.loss_ops = self._build_losses()
+        self.reset_op = self._build_reset()
 
-        self.sess = tf.Session(graph=self.graph)
-        # from tensorflow.python import debug as tf_debug
-        # self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
+        self._initialize_variables()
 
-        self.sess.run(self._variables_initializer('losses'))
 
+    def _initialize_variables(self):
         with self.graph.as_default():
-            self.reset_op = self.provider.state_saver.reset_states()
+            checkpoint = tf.train.latest_checkpoint(self.log_dir)
+            if checkpoint is None:
+                tf.logging.warning('No checkpoint file found in {}; reinitializing'.format(self.log_dir))
+
+            if not checkpoint is None:
+                self.sess.run(self._variables_initializer('losses'))
+                saver = self.get_saver()
+                saver.restore(self.sess, checkpoint)
+            else:
+                self.sess.run(self._variables_initializer())
 
 
     def _build_model(self):
-        with self.graph.as_default():
-            with tf.variable_scope(self.scope):
-                self.provider.batch_sequences_with_states()
-                out_ops, ctx_ops = self.model.build_model(self.provider, False)
-        return out_ops, ctx_ops
+        raise NotImplementedError()
 
 
     def _build_losses(self):
         with self.graph.as_default():
+            import pdb
+            pdb.set_trace()
             # with tf.variable_scope(self.scope):
-            loss_ops = self.model.calculate_losses(self.out_ops['output'], self.provider.targets,
+            loss_ops = self.model.calculate_losses(self.out_ops['output'],
+                    self.state_saver._sequences['conflict'],
                     self.ctx_ops['key'], self.ctx_ops['length'], 'losses')
         return loss_ops
 
@@ -60,47 +71,20 @@ class Evaluator:
         return init_op
 
 
-    # def initialize_variables(self):
-    #     self.init_op = tf.group(tf.global_variables_initializer(),
-    #                             tf.local_variables_initializer())
-    #     self.sess.run(self.init_op)
-
     @property
     def variables(self):
         return self.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope)
 
-#     def __del__(self):
-#         print('Cleaning up session')
-#         self.sess.close()
-
 
     @classmethod
-    def init_from_logs(cls, log_dir, feat_dim=(272,)):
-        """
-        Rebuilds the model from logs based on the saved cli arguments
-        and saved network weights.
-        There can be a discrepancy between the code at that time and now.
-        """
+    def get_args(cls, log_dir):
         if not os.path.exists(log_dir + '/args.cson'):
             raise Exception('No args.cson file found in {}'.format(log_dir))
-
-        checkpoint = tf.train.latest_checkpoint(log_dir)
-        if checkpoint is None:
-            raise Exception('No checkpoints file found in {}'.format(log_dir))
 
         with open(log_dir + '/args.cson', 'r') as f:
             args = cson.load(f)
 
-        encoder = util.init_with(Encoder, args)
-        provider = InMemoryProvider(encoder=encoder, dim_feature=feat_dim,
-                **util.pick(args, util.params_for(Provider.__init__)))
-        model = AttendModel(provider, encoder,
-                **util.pick(args, util.params_for(AttendModel.__init__)))
-
-        evaluator = cls(encoder, provider, model, args)
-        saver = tf.train.Saver(evaluator.variables)
-        saver.restore(evaluator.sess, checkpoint)
-        return evaluator
+        return args
 
 
     def evaluate(self, sequence, targets=None, key='input_seq'):
@@ -121,7 +105,7 @@ class Evaluator:
                   'alpha': np.empty((l, D)),
                 })
 
-        state_saver = self.provider.state_saver
+        state_saver = self.state_saver
         key = '{}:{}'.format(key, '0')
         keys = []
 
@@ -166,4 +150,122 @@ class Evaluator:
         if not targets is None:
             total.update(total_loss)
 
+        total['output'] = np.resize(total['output'], [l])
+
         return total
+
+
+class ImportEvaluator(Evaluator):
+    def __init__(self, model, log_dir, meta_path, args=None, scope=None):
+        self.model = model
+        self.meta_path = meta_path
+
+        super().__init__(log_dir, args, scope)
+
+
+    def _build_model(self):
+        with self.graph.as_default():
+            # Imports the graph as well
+            self.saver = tf.train.import_meta_graph(self.log_dir + '/' + self.meta_path)
+
+            input = tf_util.get_collection_as_dict(attend.GraphKeys.INPUT)
+            state = self.graph.get_collection(attend.GraphKeys.STATE_SAVER)
+            state = { '_' + tf_util.name(v): v for v in state }
+            state['_sequences'] = {
+                'images': input['features'],
+                'conflict': input['targets'],
+            }
+            self.state_saver = DictProxy(state)
+            output = tf_util.get_collection_as_dict(attend.GraphKeys.OUTPUT)
+            context = tf_util.get_collection_as_dict(attend.GraphKeys.CONTEXT)
+
+            return output, context
+
+
+    def get_saver(self):
+        return self.saver
+
+
+    def _build_reset(self):
+        reset_op = self.graph.get_collection(attend.GraphKeys.STATE_RESET)[0]
+        return reset_op
+
+
+    @classmethod
+    def import_from_logs(cls, log_dir, feat_dim=(272,), meta_path='eval_model.meta.proto'):
+        if not os.path.isdir(log_dir):
+            raise Exception('Log dir does not exist')
+
+        args = Evaluator.get_args(log_dir)
+
+        encoder = util.init_with(Encoder, args)
+        provider = InMemoryProvider(encoder=encoder, dim_feature=feat_dim,
+                **util.pick(args, util.params_for(Provider.__init__)))
+        model = AttendModel(provider, encoder,
+                **util.pick(args, util.params_for(AttendModel.__init__)))
+
+        e = cls(model, log_dir, meta_path, args)
+        e.initialize()
+
+        return e
+
+
+class RebuildEvaluator(Evaluator):
+    def __init__(self, encoder, provider, model, log_dir, args=None, scope=None):
+        self.encoder = encoder
+        self.provider = provider
+        self.state_saver = provider.state_saver
+        self.model = model
+
+        super().__init__(log_dir, args, scope)
+
+
+    def _build_model(self):
+        with self.graph.as_default():
+            with tf.variable_scope(self.scope):
+                self.provider.batch_sequences_with_states()
+                out_ops, ctx_ops = self.model.build_model(self.provider, False)
+        return out_ops, ctx_ops
+
+
+    def get_saver(self):
+        saver = tf.train.Saver(self.variables)
+        return saver
+
+
+    def _build_reset(self):
+        with self.graph.as_default():
+            reset_op = self.provider.state_saver.reset_states()
+            return reset_op
+
+
+    @classmethod
+    def rebuild_from_logs(cls, log_dir, feat_dim=(272,)):
+        """
+        Rebuilds the model from logs based on the saved cli arguments
+        and saved network weights.
+        There can be a discrepancy between the code at that time and now.
+        """
+        if not os.path.isdir(log_dir):
+            raise Exception('Log dir does not exist')
+        args = Evaluator.get_args(log_dir)
+
+        encoder = util.init_with(Encoder, args)
+        provider = InMemoryProvider(encoder=encoder, dim_feature=feat_dim,
+                **util.pick(args, util.params_for(Provider.__init__)))
+        model = AttendModel(provider, encoder,
+                **util.pick(args, util.params_for(AttendModel.__init__)))
+
+        evaluator = cls(encoder, provider, model, args)
+        evaluator.initialize()
+
+        return evaluator
+
+
+class DictProxy(object):
+    def __init__(self, d):
+        object.__setattr__(self, '_d', d)
+
+
+    def __getattribute__(self, name):
+        return object.__getattribute__(self, '_d').get(name)

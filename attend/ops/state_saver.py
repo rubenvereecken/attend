@@ -2,7 +2,8 @@ import tensorflow as tf
 import numpy as np
 
 
-from attend import ops
+import attend
+from attend import ops, tf_util
 
 
 class ManualStateSaver:
@@ -34,6 +35,11 @@ class ManualStateSaver:
         # Complicated key, also to be fed in currently
         self._full_key = tf.placeholder(tf.string, (None,), name='full_key')
         self._key = tf.placeholder(tf.string, (None,), name='key')
+
+        tf_util.add_to_collection(attend.GraphKeys.STATE_SAVER,
+                [#*self._sequences.values(),
+                 self._full_key, self._key,
+                 self._length, self._sequence, self._sequence_count])
 
 
     def state(self, k):
