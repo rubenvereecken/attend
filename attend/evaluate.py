@@ -17,6 +17,8 @@ class Evaluator:
 
         self.graph = tf.Graph()
         self.sess = tf.Session(graph=self.graph)
+        # from tensorflow.python import debug as tf_debug
+        # self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
 
 
     def initialize(self):
@@ -47,8 +49,6 @@ class Evaluator:
 
     def _build_losses(self):
         with self.graph.as_default():
-            import pdb
-            pdb.set_trace()
             # with tf.variable_scope(self.scope):
             loss_ops = self.model.calculate_losses(self.out_ops['output'],
                     self.state_saver._sequences['conflict'],
@@ -214,7 +214,6 @@ class RebuildEvaluator(Evaluator):
     def __init__(self, encoder, provider, model, log_dir, args=None, scope=None):
         self.encoder = encoder
         self.provider = provider
-        self.state_saver = provider.state_saver
         self.model = model
 
         super().__init__(log_dir, args, scope)
@@ -224,6 +223,8 @@ class RebuildEvaluator(Evaluator):
         with self.graph.as_default():
             with tf.variable_scope(self.scope):
                 self.provider.batch_sequences_with_states()
+                # State saver gets created during batching
+                self.state_saver = self.provider.state_saver
                 out_ops, ctx_ops = self.model.build_model(self.provider, False)
         return out_ops, ctx_ops
 
@@ -256,7 +257,7 @@ class RebuildEvaluator(Evaluator):
         model = AttendModel(provider, encoder,
                 **util.pick(args, util.params_for(AttendModel.__init__)))
 
-        evaluator = cls(encoder, provider, model, args)
+        evaluator = cls(encoder, provider, model, log_dir, args)
         evaluator.initialize()
 
         return evaluator
