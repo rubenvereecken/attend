@@ -12,7 +12,8 @@ def main():
     parser = argparse.ArgumentParser(description='Convert frame images to hf5 and preprocess')
     parser.add_argument('in_dir', type=str)
     parser.add_argument('-n', '--dry-run', action='store_true')
-    parser.set_defaults(dry_run=False)
+    parser.add_argument('-c', '--confirm', action='store_true')
+    parser.set_defaults(dry_run=False, confirm=False)
     args = parser.parse_args()
 
     if not os.path.exists(args.in_dir):
@@ -20,12 +21,20 @@ def main():
 
     dirs = logdirs_without_checkpoints(args.in_dir)
 
+    if len(dirs) == 0:
+        print('No directories to be removed')
+        sys.exit(0)
+
     if args.dry_run:
         print('{} directories to be removed:'.format(len(dirs)))
         for d in dirs:
             print(d)
         sys.exit(0)
 
+    if args.confirm:
+        y = input('Remove? (y/N) ')
+        if y.strip() != 'y':
+            sys.exit(0)
 
     for d in dirs:
         shutil.rmtree(d, ignore_errors=True)
