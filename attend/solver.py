@@ -102,7 +102,7 @@ class AttendSolver():
         g = tf.get_default_graph()
 
         # For now, its results are stored inside the provider
-        provider.batch_sequences_with_states(is_training=True)
+        provider.batch_sequences_with_states(is_training=True, reuse=False)
 
         global_step = tf.Variable(0, trainable=False, name='global_step')
 
@@ -116,6 +116,7 @@ class AttendSolver():
             n_vars = len(tf.trainable_variables())
 
             val_provider.batch_sequences_with_states(1, is_training=False,
+                    reuse=True,
                     collection=attend.GraphKeys.VAL_INPUT_RUNNERS)
             with tf.variable_scope(tf.get_variable_scope(), reuse=True):
                 # tf.get_variable_scope().reuse_variables()
@@ -294,7 +295,7 @@ class AttendSolver():
 
         with graph.as_default():
             with tf.variable_scope(scope, reuse=False):
-                provider.batch_sequences_with_states(is_training=False)
+                provider.batch_sequences_with_states(is_training=False, reuse=False)
                 out_ops, ctx_ops = self.model.build_model(provider, False)
                 reset_op = provider.state_saver.reset_states()
                 tf_util.add_to_collection(attend.GraphKeys.STATE_RESET, reset_op, graph)

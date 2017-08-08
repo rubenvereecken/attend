@@ -43,6 +43,7 @@ class Runner:
         _boolean_argument('use_dropout')
         _boolean_argument('use_maxnorm')
         _boolean_argument('final_sigmoid')
+        _boolean_argument('save_eval_graph')
 
         parser.add_argument('--dropout', type=float)
 

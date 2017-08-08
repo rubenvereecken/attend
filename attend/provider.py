@@ -49,7 +49,7 @@ class Provider():
         if type(dims) == list: dims = np.prod(dims)
         return dims
 
-    def _prepare_initial(self, is_training, scope=None):
+    def _prepare_initial(self, is_training, reuse=False, scope=None):
         with tf.variable_scope(scope or 'initial'):
             initial_constants = {
                 'lstm_c': tf.zeros([self.H], dtype=tf.float32),
@@ -89,9 +89,7 @@ class Provider():
 
             # TODO this is a sneaky workaround so ONLY the initials are reused,
             # not other provider variables such as maybe filename queue
-            # TODO eval graph does not share anything and is_training is False,
-            # So change the following lines once init state learning works
-            with tf.variable_scope(tf.get_variable_scope(), reuse=not is_training):
+            with tf.variable_scope(tf.get_variable_scope(), reuse=reuse):
 
                 initial_states = { k: tf.get_variable('initial_{}'.format(k), v.shape,
                         dtype=v.dtype,
@@ -115,7 +113,7 @@ class Provider():
     def preprocess_example(self, example):
         return example
 
-    def batch_sequences_with_states(self, num_epochs=None, is_training=True, collection=None):
+    def batch_sequences_with_states(self, num_epochs=None, is_training=True, reuse=False, collection=None):
         container = util.noop()
         with container:
             with tf.variable_scope('input') as scope:
@@ -135,7 +133,7 @@ class Provider():
 
                 example = self.preprocess_example(example)
 
-                initial_states = self._prepare_initial(is_training)
+                initial_states = self._prepare_initial(is_training, reuse)
                 input_sequences = { 'images': example }
                 if not target is None:
                     input_sequences[self.feat_name] = target

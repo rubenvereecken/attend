@@ -5,6 +5,7 @@ from attend.log import Log; log = Log.get_logger(__name__)
 import attend
 from attend import tf_util
 from attend.attention import *
+from functools import partial
 
 
 class AttendModel():
@@ -48,9 +49,10 @@ class AttendModel():
         else:
             raise Exception()
 
+        self.attention_units = attention_units
         self.attention_impl = attention_impl
         if attention_impl == 'bahdanau':
-            self.attention_layer = BahdanauAttention(attention_units)
+            self.attention_layer = partial(BahdanauAttention, attention_units)
         elif attention_impl is None or attention_impl == 'none':
             self.attention_layer = None
         else:
@@ -113,6 +115,7 @@ class AttendModel():
 
         outputs = []
         if self.attention_layer:
+            attention = self.attention_layer()
             contexts = []
             alphas = []
         else:
@@ -139,7 +142,7 @@ class AttendModel():
                     # for t = T-1, use all of current frame and none from history
                     past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], 1, name='window')
                     # log.debug('Enabling attention with a %s step window', T)
-                    context, alpha = self.attention_layer(past_window, h, t!=0)
+                    context, alpha = attention(past_window, h, t!=0)
                     contexts.append(context)
                     alphas.append(alpha)
                     decoder_lstm_input = tf.concat([true_prev_target, context], 1)
