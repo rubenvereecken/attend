@@ -132,6 +132,7 @@ class AttendSolver():
                 assert n_vars == len(tf.trainable_variables()), 'New vars were created for val'
 
         if save_eval_graph:
+            log.info('Creating eval graph')
             eval_graph = self.create_test_graph(**provider.__dict__)
             # tf.train.write_graph(eval_graph, log_dir, 'eval_model.graph.proto',
             #         as_text=False)

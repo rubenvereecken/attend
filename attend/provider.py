@@ -89,13 +89,15 @@ class Provider():
 
             # TODO this is a sneaky workaround so ONLY the initials are reused,
             # not other provider variables such as maybe filename queue
+            # TODO eval graph does not share anything and is_training is False,
+            # So change the following lines once init state learning works
             with tf.variable_scope(tf.get_variable_scope(), reuse=not is_training):
 
                 initial_states = { k: tf.get_variable('initial_{}'.format(k), v.shape,
                         dtype=v.dtype,
                         # initializer=tf.constant_initializer(1), \
-                        # initializer=lambda *args, **kwargs: v, \
-                        initializer=initializers[k],
+                        initializer=lambda *args, **kwargs: v, \
+                        # initializer=initializers[k],
                         trainable=is_training and self.learn_initial_states and \
                                 k not in ['first', 'history'], \
                         collections=[attend.GraphKeys.INITIAL_STATES]) \
