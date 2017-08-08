@@ -3,6 +3,11 @@ import tensorflow as tf
 # The only pretty way to get access to a Dense class
 import tensorflow.contrib.keras as K
 
+import inspect
+
+from attend import Log; log = Log.get_logger(__name__)
+from attend.util import params_for
+
 
 class Attention:
     def __init__(self):
@@ -19,13 +24,25 @@ class Attention:
 
 
 class BahdanauAttention(Attention):
-    def __init__(self, num_units):
+    def __init__(self, num_units, normalize=False):
         self._num_units = num_units
+        self._normalize = normalize
         # W_a * s_i
         self._query_layer = K.layers.Dense(num_units, name='query_layer', use_bias=False)
         # U_a * h_j
         self._memory_layer = K.layers.Dense(num_units, name='memory_layer', use_bias=False)
         self._probability_fn = tf.nn.softmax
+
+        super().__init__()
+
+        l = locals()
+        # frame = inspect.currentframe()
+        classname = self.__class__.__name__
+        params = params_for(BahdanauAttention)
+        args = [l[param] for param in params]
+        s = ', '.join(['{}={}'.format(k, v) for k, v in zip(params, args)])
+        s = '{}({})'.format(classname, s)
+        log.info(s)
 
 
     def _align(self, memory, query):
@@ -33,11 +50,16 @@ class BahdanauAttention(Attention):
         processed_query = self._query_layer(query)
         processed_query = tf.expand_dims(processed_query, 1) # B x 1 x D_attention
         v = tf.get_variable('attention_v', [self._num_units], tf.float32)
+        b = tf.get_variable('attention_b', [self._num_units], tf.float32)
 
-        # TODO normalize option
+        if self._normalize:
+            g = tf.get_variable('attention_g',
+                    initializer=tf.sqrt(1. / self._num_units))
+            # normed_v = g * v / ||v||
+            v = g * v / tf.norm(v)
 
         # e_i
-        score = v * tf.tanh(keys + processed_query) # B x T x D_attention
+        score = v * tf.tanh(keys + processed_query + b) # B x T x D_attention
 
         # NOTE if you don't summarize over the features,
         # it's like attention per time per feature. Boom

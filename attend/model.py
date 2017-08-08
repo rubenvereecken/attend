@@ -52,7 +52,9 @@ class AttendModel():
         self.attention_units = attention_units
         self.attention_impl = attention_impl
         if attention_impl == 'bahdanau':
-            self.attention_layer = partial(BahdanauAttention, attention_units)
+            self.attention_layer = partial(BahdanauAttention, attention_units, False)
+        elif attention_impl.startswith('bahdanau_norm'):
+            self.attention_layer = partial(BahdanauAttention, attention_units, True)
         elif attention_impl is None or attention_impl == 'none':
             self.attention_layer = None
         else:
@@ -99,7 +101,6 @@ class AttendModel():
             #     x = tf.Print(x, [tf.shape(features)], message='Input feat shape ')
 
         x = self.encoder(x, state_saver, use_dropout)
-        log.debug('encoded shape %s', x.shape)
 
         # TODO consider projecting features x
 
@@ -141,7 +142,6 @@ class AttendModel():
                     # for t = 0, use current and t-1 from history
                     # for t = T-1, use all of current frame and none from history
                     past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], 1, name='window')
-                    # log.debug('Enabling attention with a %s step window', T)
                     context, alpha = attention(past_window, h, t!=0)
                     contexts.append(context)
                     alphas.append(alpha)
