@@ -4,6 +4,7 @@ import tensorflow as tf
 from attend.log import Log; log = Log.get_logger(__name__)
 import attend
 from attend import tf_util
+from attend.attention import *
 
 
 class AttendModel():
@@ -11,7 +12,7 @@ class AttendModel():
 
 
     def __init__(self, provider, encoder, num_hidden=512, loss_fun='mse',
-            time_steps=None, attention_impl=None,
+            time_steps=None, attention_impl=None, attention_units=None,
             dropout=None,
             use_dropout=True,
             final_sigmoid=False,
@@ -48,42 +49,14 @@ class AttendModel():
             raise Exception()
 
         self.attention_impl = attention_impl
-        if attention_impl == 'time_naive':
-            self.attention_layer = self._attention_layer
+        if attention_impl == 'bahdanau':
+            self.attention_layer = BahdanauAttention(attention_units)
         elif attention_impl is None or attention_impl == 'none':
             self.attention_layer = None
         else:
             raise ValueError('Invalid attention impl {}'.format(attention_impl))
 
         self.debug = debug
-
-
-    def _attention_layer(self, x, h, reuse=False):
-        """
-        h: decoder hidden state from previous step
-        """
-        # Require features to be flat at this point
-        x.shape.assert_has_rank(3)
-        D_enc = np.prod(x.shape.as_list()[2:])
-
-        with tf.variable_scope('project_features', reuse=reuse):
-            W = tf.get_variable('W', [D_enc, D_enc], initializer=self.weight_initializer)
-            b = tf.get_variable('b', [D_enc], initializer=self.const_initializer)
-            feat_proj = tf.einsum('ijk,kl->ijl', x, W) + b
-
-        with tf.variable_scope('attention_layer', reuse=reuse):
-            # TODO dropout on attention hidden weights
-            W = tf.get_variable('W', [self.H, D_enc], initializer=self.weight_initializer)
-            b = tf.get_variable('b', [D_enc], initializer=self.const_initializer)
-            h_att = tf.nn.relu(feat_proj + tf.expand_dims(tf.matmul(h, W), 1) + b, name='h_att')
-
-            w_att = tf.get_variable('w_att', [D_enc, 1], initializer=self.weight_initializer)
-            out_att = tf.einsum('ijk,kl->ij', h_att, w_att)
-            # Softmax assigns probability to each frame
-            alpha = tf.nn.softmax(out_att, name='alpha')
-            context = tf.reduce_sum(x * tf.expand_dims(alpha, 2), 1, name='context')
-
-            return context, alpha
 
 
     def build_model(self, provider, is_training=True):
@@ -168,7 +141,7 @@ class AttendModel():
                     # log.debug('Enabling attention with a %s step window', T)
                     context, alpha = self.attention_layer(past_window, h, t!=0)
                     contexts.append(context)
-                    alphas.append(context)
+                    alphas.append(alpha)
                     decoder_lstm_input = tf.concat([true_prev_target, context], 1)
                 else:
                     decoder_lstm_input = tf.concat([true_prev_target, x[:,t,:]], 1)

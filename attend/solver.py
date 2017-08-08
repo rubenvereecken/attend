@@ -197,7 +197,7 @@ class AttendSolver():
         # sess = tf_debug.LocalCLIDebugWrapperSession(sess, thread_name_filter="MainThread$")
         sess.run(init_op)
 
-        saver = tf.train.Saver()
+        saver = tf.train.Saver(save_relative_paths=True)
         # Special input runners run separately because the supervisor can't
         # serialize them
         # input_threads = tf.train.start_queue_runners(sess=sess, coord=coord,

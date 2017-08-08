@@ -17,7 +17,7 @@ class Provider():
             dim_feature=None,
             shuffle_examples=False, shuffle_examples_capacity=None,
             shuffle_splits=False, shuffle_splits_capacity=None,
-            learn_initial_states=True,
+            learn_initial_states=False,
             debug=False):
         self.batch_size  = batch_size
         self.T           = time_steps
@@ -60,6 +60,18 @@ class Provider():
                 'first': tf.constant(True)
             }
 
+            # train_init = tf.random_uniform_initializer(-.01, 0.01)
+            train_init = tf.constant_initializer(0)
+            bool_init = tf.constant_initializer(True, dtype=tf.bool)
+
+            initializers = {
+                    'lstm_c': train_init,
+                    'lstm_h': train_init,
+                    'last_out': train_init,
+                    'history': train_init,
+                    'first': bool_init,
+                    }
+
             if self.encoder.encode_lstm:
                 log.debug('Preparing encoder LSTM saved state')
                 initial_constants.update({
@@ -68,21 +80,33 @@ class Provider():
                     Provider.ENCODE_LSTM_H: \
                             tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
                     })
-
+                initializers.update({
+                    'encode_lstm_c': train_init,
+                    'encode_lstm_h': train_init,
+                    })
             # The initial state values are fetched anew each time a new key is encountered
             # so we can actually learn optimal initial values instead of just using zeros
-            initial_states = { k: tf.Variable(initial_value=v, \
-                name='initial_{}'.format(k), \
-                trainable=is_training and self.learn_initial_states and k not in ['first', 'history'], \
-                collections=[attend.GraphKeys.INITIAL_STATES]) \
-                for k, v in initial_constants.items()}
 
-            # This makes sure we're not dealing with the reference but learned values
-            initial_states = { k: v.initialized_value() for k, v in initial_states.items() }
-            # for k, v in initial_states.items():
-            #     if k in ['first', 'history']: continue
-            #     initial_states[k] = tf.Print(v, [tf.reduce_mean(v)], message='mean learned {} '.format(k))
-            # TODO not actually learning anything :((
+            # TODO this is a sneaky workaround so ONLY the initials are reused,
+            # not other provider variables such as maybe filename queue
+            with tf.variable_scope(tf.get_variable_scope(), reuse=not is_training):
+
+                initial_states = { k: tf.get_variable('initial_{}'.format(k), v.shape,
+                        dtype=v.dtype,
+                        # initializer=tf.constant_initializer(1), \
+                        # initializer=lambda *args, **kwargs: v, \
+                        initializer=initializers[k],
+                        trainable=is_training and self.learn_initial_states and \
+                                k not in ['first', 'history'], \
+                        collections=[attend.GraphKeys.INITIAL_STATES]) \
+                        for k, v in initial_constants.items() }
+
+
+                # This makes sure we're not dealing with the reference but learned values
+                initial_states = { k: v.initialized_value() for k, v in initial_states.items() }
+                # for k, v in initial_states.items():
+                #     if k in ['first', 'history']: continue
+                #     initial_states[k] = tf.Print(v, [tf.reduce_max(v)], message='max learned {} '.format(k))
 
             return initial_states
 
@@ -218,7 +242,6 @@ class FileProvider(Provider):
             return example
 
 
-
 def batch_sequences_with_states(
         # These are all the arguments I'm definitely ignoring
         capacity, num_threads, make_keys_unique,
@@ -262,6 +285,7 @@ class InMemoryProvider(Provider):
 
             return self.placeholders['features'], self.placeholders['targets'], \
                 { k: self.placeholders[k] for k in ['key', 'num_frames'] }
+
 
     def preprocess_example(self, example):
         return example

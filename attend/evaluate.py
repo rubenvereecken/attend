@@ -31,7 +31,8 @@ class Evaluator:
 
     def _initialize_variables(self):
         with self.graph.as_default():
-            checkpoint = tf.train.latest_checkpoint(self.log_dir)
+            checkpoint = self.log_dir + '/model.ckpt-50000'
+            # checkpoint = tf.train.latest_checkpoint(self.log_dir)
             if checkpoint is None:
                 tf.logging.warning('No checkpoint file found in {}; reinitializing'.format(self.log_dir))
 
@@ -166,7 +167,10 @@ class ImportEvaluator(Evaluator):
     def _build_model(self):
         with self.graph.as_default():
             # Imports the graph as well
-            self.saver = tf.train.import_meta_graph(self.log_dir + '/' + self.meta_path)
+            try:
+                self.saver = tf.train.import_meta_graph(self.log_dir + '/' + self.meta_path)
+            except OSError as e:
+                raise Exception('eval_model.meta.proto not found, maybe an old implementation?')
 
             input = tf_util.get_collection_as_dict(attend.GraphKeys.INPUT)
             state = self.graph.get_collection(attend.GraphKeys.STATE_SAVER)
