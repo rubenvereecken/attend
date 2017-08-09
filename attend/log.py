@@ -70,13 +70,13 @@ class Log:
         sha = subprocess.check_output(['git', 'describe', '--always'])
         file_path = cls.log_dir + '/{}'.format(file_name)
         with open(file_path, 'w') as f:
-            f.write(str(sha))
+            f.write(sha.decode())
 
     @classmethod
     def save_hostname(cls, file_name='host'):
         import socket
         hostname = socket.gethostname()
-        file_path = cls.log_dir + '/{}'.format(hostname)
+        file_path = cls.log_dir + '/{}'.format(file_name)
         with open(file_path, 'w') as f:
             f.write(str(hostname))
 

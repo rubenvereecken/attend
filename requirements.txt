@@ -3,3 +3,4 @@ cson
 h5py
 tqdm
 psutil
+bokeh

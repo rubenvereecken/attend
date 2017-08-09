@@ -25,13 +25,17 @@ def main():
         print('No directories to be removed')
         sys.exit(0)
 
-    if args.dry_run:
+    def _print_dirs():
         print('{} directories to be removed:'.format(len(dirs)))
         for d in dirs:
             print(d)
+
+    if args.dry_run:
+        _print_dirs()
         sys.exit(0)
 
     if args.confirm:
+        _print_dirs()
         y = input('Remove? (y/N) ')
         if y.strip() != 'y':
             sys.exit(0)
