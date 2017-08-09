@@ -98,13 +98,11 @@ class Evaluator:
         l = sequence.shape[0]
         n_batches = np.ceil(l / T).astype(int)
 
-        total = { 'output': np.empty((l,1)) }
+        # total = { 'output': np.empty((l,1)) }
+        total = dict(output=[])
 
         if 'context' in self.out_ops:
-            total.update({
-                  'context': np.empty((l, D)),
-                  'alpha': np.empty((l, D)),
-                })
+            total.update(dict(context=[], alpha=[]))
 
         state_saver = self.state_saver
         key = '{}:{}'.format(key, '0')
@@ -141,12 +139,15 @@ class Evaluator:
                 out, ctx = self.sess.run((self.out_ops, ctx_ops), feed_dict=feed_dict)
 
             for k, v in out.items():
-                total[k][offset:offset+batch_l] = v[0][:batch_l]
+                total[k].append(v[0][:batch_l])
+                # total[k][offset:offset+batch_l] = v[0][:batch_l]
             keys.append(ctx['key'][0].decode())
 
         # Reset saved states for this sequence
         keys = list(set(keys))
         self.sess.run(self.reset_op, { state_saver._key: keys })
+
+        total = { k: np.concatenate(v) for k, v in total.items() }
 
         if not targets is None:
             total.update(total_loss)

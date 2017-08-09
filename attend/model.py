@@ -55,6 +55,9 @@ class AttendModel():
             self.attention_layer = partial(BahdanauAttention, attention_units, False)
         elif attention_impl.startswith('bahdanau_norm'):
             self.attention_layer = partial(BahdanauAttention, attention_units, True)
+        elif attention_impl == 'time_naive':
+            # Backward compatibility to rebuild old models
+            self.attention_layer = attend.attention.OldTimeNaive
         elif attention_impl is None or attention_impl == 'none':
             self.attention_layer = None
         else:
@@ -126,6 +129,7 @@ class AttendModel():
         with tf.variable_scope('decoder'):
             lstm_scope = None
             decode_lstm_scope = None
+            attention_scope = None
             for t in range(T):
                 if t == 0:
                     # Get the last output from previous batch
@@ -135,28 +139,27 @@ class AttendModel():
                     true_prev_target = targets[:, t-1]
                 else:
                     # Feed back in previous prediction
-                    true_prev_target = output
+                    true_prev_target = outputs[-1]
 
 
                 if self.attention_layer:
                     # for t = 0, use current and t-1 from history
                     # for t = T-1, use all of current frame and none from history
-                    past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], 1, name='window')
-                    context, alpha = attention(past_window, h, t!=0)
-                    contexts.append(context)
-                    alphas.append(alpha)
-                    decoder_lstm_input = tf.concat([true_prev_target, context], 1)
+                    with tf.name_scope(attention_scope or 'attention') as attention_scope:
+                        past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], 1, name='window')
+                        context, alpha = attention(past_window, h, t!=0)
+                        contexts.append(context)
+                        alphas.append(alpha)
+                        decoder_lstm_input = tf.concat([true_prev_target, context], 1)
                 else:
                     decoder_lstm_input = tf.concat([true_prev_target, x[:,t,:]], 1)
 
-                # TODO bring scope outside?
                 with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
+                    # _ and h are the same, the LSTM output
                     _, (c, h) = lstm_cell(inputs=decoder_lstm_input, state=[c, h])
 
                 with tf.name_scope(decode_lstm_scope or 'decode_lstm_step') as decode_lstm_scope:
                     output = self._decode(c, dropout=True, reuse=(t!=0))
-                    if self.final_sigmoid:
-                        output = tf.nn.sigmoid(output)
                     outputs.append(output)
             # outputs = tf.squeeze(tf.stack(outputs, axis=1), axis=[2]) # B x T
             outputs = tf.stack(outputs, axis=1) # B x T x 1
@@ -303,7 +306,8 @@ class AttendModel():
             W = tf.get_variable('W', [h.shape[1], 1], initializer=self.weight_initializer)
             b = tf.get_variable('b', [1], initializer=self.const_initializer)
             out = tf.matmul(h, W) + b
-            # out = tf.nn.sigmoid(tf.matmul(h, W) + b)
+            if self.final_sigmoid:
+                out = tf.nn.sigmoid(out)
             return out
 
 

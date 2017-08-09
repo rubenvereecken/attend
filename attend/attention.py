@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 # The only pretty way to get access to a Dense class
 import tensorflow.contrib.keras as K
@@ -46,24 +47,25 @@ class BahdanauAttention(Attention):
 
 
     def _align(self, memory, query):
-        keys = self._memory_layer(memory)
-        processed_query = self._query_layer(query)
-        processed_query = tf.expand_dims(processed_query, 1) # B x 1 x D_attention
-        v = tf.get_variable('attention_v', [self._num_units], tf.float32)
-        b = tf.get_variable('attention_b', [self._num_units], tf.float32)
+        with tf.name_scope('align'):
+            keys = self._memory_layer(memory)
+            processed_query = self._query_layer(query)
+            processed_query = tf.expand_dims(processed_query, 1) # B x 1 x D_attention
+            v = tf.get_variable('attention_v', [self._num_units], tf.float32)
+            b = tf.get_variable('attention_b', [self._num_units], tf.float32)
 
-        if self._normalize:
-            g = tf.get_variable('attention_g',
-                    initializer=tf.sqrt(1. / self._num_units))
-            # normed_v = g * v / ||v||
-            v = g * v / tf.norm(v)
+            if self._normalize:
+                g = tf.get_variable('attention_g',
+                        initializer=tf.sqrt(1. / self._num_units))
+                # normed_v = g * v / ||v||
+                v = g * v / tf.norm(v)
 
-        # e_i
-        score = v * tf.tanh(keys + processed_query + b) # B x T x D_attention
+            # e_i
+            score = v * tf.tanh(keys + processed_query + b) # B x T x D_attention
 
-        # NOTE if you don't summarize over the features,
-        # it's like attention per time per feature. Boom
-        reduced_score = tf.reduce_sum(score, axis=2) # Reduce along D_attention axis
+            # NOTE if you don't summarize over the features,
+            # it's like attention per time per feature. Boom
+            reduced_score = tf.reduce_sum(score, axis=2) # Reduce along D_attention axis
 
         return reduced_score # B x T
 
@@ -74,7 +76,7 @@ class BahdanauAttention(Attention):
         query:  B x H_dec     (s in Bahdanau paper)
         """
         with tf.variable_scope('bahdanau_attention', reuse=reuse):
-            score = self._align(memory, query)
+            score = self._align(memory, query) # B x T
             alpha = self._probability_fn(score, name='alpha') # B x T
             # expanded_alpha = tf.expand_dims(alpha, 1) # B x 1 x T
 
@@ -83,5 +85,35 @@ class BahdanauAttention(Attention):
             context = tf.einsum('ij,ijl->il', alpha, memory)
             # context = tf.matmul(expanded_alpha, memory) # B x 1 x H_enc
             # context = tf.squeeze(context, 1) # B x H_enc
+
+            return context, alpha
+
+
+class OldTimeNaive(Attention):
+    def __call__(self, x, h, reuse=False):
+        """
+        h: decoder hidden state from previous step
+        """
+        # Require features to be flat at this point
+        x.shape.assert_has_rank(3)
+        D_enc = np.prod(x.shape.as_list()[2:])
+        H = h.shape.as_list()[-1]
+
+        with tf.variable_scope('project_features', reuse=reuse):
+            W = tf.get_variable('W', [D_enc, D_enc], initializer=self.weight_initializer)
+            b = tf.get_variable('b', [D_enc], initializer=self.const_initializer)
+            feat_proj = tf.einsum('ijk,kl->ijl', x, W) + b
+
+        with tf.variable_scope('attention_layer', reuse=reuse):
+            # TODO dropout on attention hidden weights
+            W = tf.get_variable('W', [H, D_enc], initializer=self.weight_initializer)
+            b = tf.get_variable('b', [D_enc], initializer=self.const_initializer)
+            h_att = tf.nn.relu(feat_proj + tf.expand_dims(tf.matmul(h, W), 1) + b, name='h_att')
+
+            w_att = tf.get_variable('w_att', [D_enc, 1], initializer=self.weight_initializer)
+            out_att = tf.einsum('ijk,kl->ij', h_att, w_att)
+            # Softmax assigns probability to each frame
+            alpha = tf.nn.softmax(out_att, name='alpha')
+            context = tf.reduce_sum(x * tf.expand_dims(alpha, 2), 1, name='context')
 
             return context, alpha
