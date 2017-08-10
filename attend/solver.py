@@ -229,7 +229,8 @@ class AttendSolver():
                         # keys = list(map(lambda x: x.decode(), keys))
                     # If duplicate key is encountered this could happen rarely
                     except tf.errors.InvalidArgumentError as e:
-                        log.exception(e)
+                        # log.exception(e)
+                        raise e
                     global_step_value = tf.train.global_step(sess, global_step)
                     log.debug('TRAIN %s - %s', global_step_value, loss)
 

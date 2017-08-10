@@ -17,7 +17,7 @@ class Provider():
             dim_feature=None,
             shuffle_examples=False, shuffle_examples_capacity=None,
             shuffle_splits=False, shuffle_splits_capacity=None,
-            learn_initial_states=False,
+            learn_initial_states=True,
             debug=False):
         self.batch_size  = batch_size
         self.T           = time_steps
@@ -50,7 +50,7 @@ class Provider():
         return dims
 
     def _prepare_initial(self, is_training, reuse=False, scope=None):
-        with tf.variable_scope(scope or 'initial'):
+        with tf.variable_scope('init_constant'):
             initial_constants = {
                 'lstm_c': tf.zeros([self.H], dtype=tf.float32),
                 'lstm_h': tf.zeros([self.H], dtype=tf.float32),
@@ -60,18 +60,6 @@ class Provider():
                 'first': tf.constant(True)
             }
 
-            # train_init = tf.random_uniform_initializer(-.01, 0.01)
-            train_init = tf.constant_initializer(0)
-            bool_init = tf.constant_initializer(True, dtype=tf.bool)
-
-            initializers = {
-                    'lstm_c': train_init,
-                    'lstm_h': train_init,
-                    'last_out': train_init,
-                    'history': train_init,
-                    'first': bool_init,
-                    }
-
             if self.encoder.encode_lstm:
                 log.debug('Preparing encoder LSTM saved state')
                 initial_constants.update({
@@ -80,35 +68,24 @@ class Provider():
                     Provider.ENCODE_LSTM_H: \
                             tf.zeros([self.encoder.encode_hidden_units], dtype=tf.float32),
                     })
-                initializers.update({
-                    'encode_lstm_c': train_init,
-                    'encode_lstm_h': train_init,
-                    })
-            # The initial state values are fetched anew each time a new key is encountered
-            # so we can actually learn optimal initial values instead of just using zeros
-
-            # TODO this is a sneaky workaround so ONLY the initials are reused,
-            # not other provider variables such as maybe filename queue
-            with tf.variable_scope(tf.get_variable_scope(), reuse=reuse):
-
-                initial_states = { k: tf.get_variable('initial_{}'.format(k), v.shape,
-                        dtype=v.dtype,
-                        # initializer=tf.constant_initializer(1), \
-                        initializer=lambda *args, **kwargs: v, \
-                        # initializer=initializers[k],
-                        trainable=is_training and self.learn_initial_states and \
-                                k not in ['first', 'history'], \
-                        collections=[attend.GraphKeys.INITIAL_STATES]) \
-                        for k, v in initial_constants.items() }
 
 
-                # This makes sure we're not dealing with the reference but learned values
-                initial_states = { k: v.initialized_value() for k, v in initial_states.items() }
-                # for k, v in initial_states.items():
-                #     if k in ['first', 'history']: continue
-                #     initial_states[k] = tf.Print(v, [tf.reduce_max(v)], message='max learned {} '.format(k))
+        with tf.variable_scope(scope or 'init_var', reuse=reuse):
+            initial_variables = { k: tf.get_variable('initial_{}'.format(k),
+                    # initializer=lambda *args, **kwargs: v, \
+                    initializer=v,
+                    trainable=is_training and self.learn_initial_states,
+                    collections=[tf.GraphKeys.GLOBAL_VARIABLES,
+                                 attend.GraphKeys.INITIAL_STATES]) \
+                    for k, v in initial_constants.items() \
+                    if k not in ['first', 'history']}
 
-            return initial_states
+            if is_training:
+                for k, v in initial_variables.items():
+                    tf.summary.histogram(k, v.initialized_value())
+                    # tf.summary.histogram(k, v)
+
+        return initial_constants, initial_variables
 
     def preprocess_example(self, example):
         return example
@@ -133,7 +110,9 @@ class Provider():
 
                 example = self.preprocess_example(example)
 
-                initial_states = self._prepare_initial(is_training, reuse)
+                initial_states, initial_variables = self._prepare_initial(is_training, reuse)
+                self.initial_variables = initial_variables
+
                 input_sequences = { 'images': example }
                 if not target is None:
                     input_sequences[self.feat_name] = target
