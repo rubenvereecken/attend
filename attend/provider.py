@@ -145,12 +145,50 @@ class Provider():
                 self.state_saver = batch
                 g.add_to_collection(attend.GraphKeys.INPUT, self.features)
                 g.add_to_collection(attend.GraphKeys.INPUT, self.targets)
-                # TODO maybe some day serialize the state saver
-                # g.add_to_collection(attend.GraphKeys.STATE, self.state_saver)
-                # This fixes an expectation of targets being single-dimensional further down the line
+                # This fixes an expectation of targets being single-dimensional
                 # So like [?, T, 1] instead of just [?, T]
                 if not self.targets is None and len(self.targets.shape) <= 2:
                     self.targets = tf.expand_dims(self.targets, -1)
+
+                if self.learn_initial_states:
+                    self._overwrite_initial(initial_variables)
+
+
+    def _overwrite_initial(self, initial_variables):
+        first = self.state_saver.state('first')
+        only_first_mask = tf.expand_dims(first, 1)
+        not_first_mask = tf.logical_not(only_first_mask)
+        only_first_mask = tf.cast(only_first_mask, tf.float32)
+        not_first_mask = tf.cast(not_first_mask, tf.float32)
+        batch_size = tf.shape(first)[0]
+
+        vs = {}
+
+        for k, init_v in initial_variables.items():
+            v = self.state_saver.state(k)
+            # B x 1 * 1 x 512 -> B x 512 (repeats row)
+            init_v = tf.einsum('ij,jk->ik', tf.ones([batch_size,1]), tf.expand_dims(init_v,0))
+            init_v = only_first_mask * init_v
+            v = not_first_mask * v
+            v = v + init_v
+            vs[k] = v
+
+        self.states = vs
+
+
+    def state(self, key):
+        if self.learn_initial_states and key in self.states:
+            # Holds a fixed version
+            return self.states[key]
+        else:
+            return self.state_saver.state(key)
+
+
+    def save_state(self, key, values):
+        return self.state_saver.save_state(key, values)
+
+
+
 
     def batch_static_pad(self):
         example, target, context = self.input_producer(self.filenames[0], self.feat_name, self.name_scope)

@@ -100,34 +100,16 @@ class AttendModel():
             batch_size = tf.shape(features)[0]
             x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
 
-        x = self.encoder(x, state_saver, use_dropout)
+        x = self.encoder(x, provider, use_dropout)
 
         # TODO consider projecting features x
 
         if not state_saver is None:
-            c = state_saver.state('lstm_c')
-            h = state_saver.state('lstm_h')
-            history = state_saver.state('history')
-            last_out = state_saver.state('last_out')
-            first = state_saver.state('first')
-            # TODO move to provider
-
-            only_first_mask = tf.sequence_mask(tf.cast(first, tf.int32))
-            only_first_mask = tf.expand_dims(first, 1)
-            not_first_mask = tf.logical_not(only_first_mask)
-            only_first_mask = tf.cast(only_first_mask, tf.float32)
-            not_first_mask = tf.cast(not_first_mask, tf.float32)
-
-            init_c = provider.initial_variables['lstm_c']
-            # 512 x 1 * 1 x 512 -> 512 x 512 (repeats row)
-            init_c = tf.einsum('ij,jk->ik', tf.ones([batch_size,1]), tf.expand_dims(init_c,0))
-            init_c = only_first_mask * init_c
-            c = not_first_mask * c # Has first=true set to zeros
-            c = c + init_c
-
-            # import pdb
-            # pdb.set_trace()
-
+            c = provider.state('lstm_c')
+            h = provider.state('lstm_h')
+            history = provider.state('history')
+            last_out = provider.state('last_out')
+            first = provider.state('first')
         else:
             c, h = self._initial_lstm(x)
 

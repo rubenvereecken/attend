@@ -44,7 +44,7 @@ class Encoder():
         self.const_initializer  = tf.constant_initializer(0.0)
 
 
-    def __call__(self, x, state_saver=None, use_dropout=True):
+    def __call__(self, x, provider=None, use_dropout=True):
         with tf.variable_scope('encoder'):
             x = self.conv_network(x)
             if self.dense_spec:
@@ -54,7 +54,7 @@ class Encoder():
                 log.debug('Using a dense layer in the encoder')
                 x = self.dense(x, use_dropout)
             if self.encode_lstm > 0:
-                x = self._encode_lstm(x, state_saver, use_dropout)
+                x = self._encode_lstm(x, provider, use_dropout)
             return x
 
 
@@ -279,7 +279,7 @@ class Encoder():
         return x
 
 
-    def _encode_lstm(self, x, state_saver=None, use_dropout=True):
+    def _encode_lstm(self, x, provider=None, use_dropout=True):
         from attend.provider import Provider
 
         with tf.variable_scope('encode_lstm'):
@@ -288,9 +288,9 @@ class Encoder():
             x_by_time = list(map(lambda x: tf.squeeze(x, axis=1), x_by_time))
             # assert len(x_by_time) == self.time_steps
 
-            if not state_saver is None:
+            if not provider is None:
                 out, _ = tf.contrib.rnn.static_state_saving_rnn(lstm_cell, x_by_time,
-                        state_saver=state_saver,
+                        state_saver=provider,
                         state_name=(Provider.ENCODE_LSTM_C, Provider.ENCODE_LSTM_H))
             else:
                 # Dynamic because we assume difference time lengths come through
