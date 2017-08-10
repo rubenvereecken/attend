@@ -17,7 +17,7 @@ class Provider():
             dim_feature=None,
             shuffle_examples=False, shuffle_examples_capacity=None,
             shuffle_splits=False, shuffle_splits_capacity=None,
-            learn_initial_states=True,
+            learn_initial_states=False,
             debug=False):
         self.batch_size  = batch_size
         self.T           = time_steps

@@ -44,6 +44,7 @@ class Runner:
         _boolean_argument('use_maxnorm')
         _boolean_argument('final_sigmoid')
         _boolean_argument('save_eval_graph')
+        _boolean_argument('learn_initial_states')
 
         parser.add_argument('--dropout', type=float)
 

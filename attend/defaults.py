@@ -29,8 +29,9 @@ class Defaults:
         gen_log_dir               = True,
         save_eval_graph           = True,
 
-        attention_units = 512,
-        final_sigmoid             = False
+        attention_units           = 512,
+        final_sigmoid             = False,
+        learn_initial_states      = True
     )
 
     debug_params = dict(
