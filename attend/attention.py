@@ -46,7 +46,7 @@ class BahdanauAttention(Attention):
         log.info(s)
 
 
-    def _align(self, memory, query):
+    def _score(self, memory, query):
         with tf.name_scope('align'):
             keys = self._memory_layer(memory)
             processed_query = self._query_layer(query)
@@ -61,11 +61,12 @@ class BahdanauAttention(Attention):
                 v = g * v / tf.norm(v)
 
             # e_i
+            # 1 x D_att * D_att -> 1; repeat for B, T
             score = v * tf.tanh(keys + processed_query + b) # B x T x D_attention
+            reduced_score = tf.reduce_sum(score, axis=2) # Reduce along D_attention axis
 
             # NOTE if you don't summarize over the features,
             # it's like attention per time per feature. Boom
-            reduced_score = tf.reduce_sum(score, axis=2) # Reduce along D_attention axis
 
         return reduced_score # B x T
 
@@ -76,7 +77,7 @@ class BahdanauAttention(Attention):
         query:  B x H_dec     (s in Bahdanau paper)
         """
         with tf.variable_scope('bahdanau_attention', reuse=reuse):
-            score = self._align(memory, query) # B x T
+            score = self._score(memory, query) # B x T
             alpha = self._probability_fn(score, name='alpha') # B x T
             # expanded_alpha = tf.expand_dims(alpha, 1) # B x 1 x T
 

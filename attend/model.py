@@ -145,7 +145,7 @@ class AttendModel():
                 if self.attention_layer:
                     # for t = 0, use current and t-1 from history
                     # for t = T-1, use all of current frame and none from history
-                    with tf.name_scope(attention_scope or 'attention') as attention_scope:
+                    with tf.variable_scope(attention_scope or 'attention', reuse=t!=0) as attention_scope:
                         past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], 1, name='window')
                         context, alpha = attention(past_window, h, t!=0)
                         contexts.append(context)
@@ -161,7 +161,7 @@ class AttendModel():
                 with tf.name_scope(decode_lstm_scope or 'decode_lstm_step') as decode_lstm_scope:
                     output = self._decode(c, dropout=True, reuse=(t!=0))
                     outputs.append(output)
-            # outputs = tf.squeeze(tf.stack(outputs, axis=1), axis=[2]) # B x T
+
             outputs = tf.stack(outputs, axis=1) # B x T x 1
             if self.attention_layer:
                 contexts = tf.stack(contexts, axis=1, name='context')
