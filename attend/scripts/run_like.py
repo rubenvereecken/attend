@@ -13,6 +13,7 @@ def main():
     parser.add_argument('-e', '--executable', type=str, default=None)
     parser.add_argument('-n', '--dry-run', action='store_true')
     parser.add_argument('-c', '--confirm', action='store_true')
+    parser.add_argument('--load_env', dest='load_env', action='store_true')
     parser.set_defaults(dry_run=False, confirm=False)
     args, rest_args = parser.parse_known_args()
 
@@ -31,8 +32,11 @@ def main():
     with open(args.log_dir + '/args.cson', 'r') as f:
         pargs = cson.load(f)
 
-    with open(args.log_dir + '/env.cson', 'r') as f:
-        env = cson.load(f)
+    if args.load_env:
+        with open(args.log_dir + '/env.cson', 'r') as f:
+            env = cson.load(f)
+    else:
+        env = os.environ.copy()
 
     # $log_dir/$prefix-$timestamp
     pargs.pop('debug')
