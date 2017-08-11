@@ -171,8 +171,8 @@ class AttendSolver():
         tf.summary.scalar('batch_loss', loss_op, family='train')
         # for var in tf.trainable_variables():
         #     tf.summary.histogram(var.op.name, var)
-        # for grad, var in grads_and_vars:
-        #     tf.summary.histogram(var.op.name+'/gradient', grad)
+        for grad, var in grads_and_vars:
+            tf.summary.histogram(var.op.name+'/gradient', grad)
 
         # The Supervisor already merges all summaries but I like explicit
         summary_op = tf.summary.merge_all()

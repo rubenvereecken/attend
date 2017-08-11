@@ -11,7 +11,6 @@ class Defaults:
         conv_impl                 = 'none',
         encode_lstm               = True,
         encode_hidden_units       = 256,
-        # dense_layer             = 1,
         dense_spec                = '-,relu',
 
         update_rule               = 'adam',
@@ -20,10 +19,8 @@ class Defaults:
         dropout                   = .75,
 
         shuffle_examples          = True,
+        # Defaults to batch_size * 4
         shuffle_examples_capacity = None,
-
-        shuffle_splits            = False,
-        shuffle_splits_capacity   = None,
 
         stats_every               = 100,
         gen_log_dir               = True,

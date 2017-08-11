@@ -31,8 +31,8 @@ class Evaluator:
 
     def _initialize_variables(self):
         with self.graph.as_default():
-            checkpoint = self.log_dir + '/model.ckpt-50000'
-            # checkpoint = tf.train.latest_checkpoint(self.log_dir)
+            # checkpoint = self.log_dir + '/model.ckpt-50000'
+            checkpoint = tf.train.latest_checkpoint(self.log_dir)
             if checkpoint is None:
                 tf.logging.warning('No checkpoint file found in {}; reinitializing'.format(self.log_dir))
 

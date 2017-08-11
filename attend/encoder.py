@@ -21,7 +21,8 @@ class Encoder():
             self.encode_lstm = encode_lstm
         self.batch_size = batch_size # TODO this will go
 
-        assert conv_impl in Encoder.ALLOWED_CONV_IMPLS
+        assert conv_impl in Encoder.ALLOWED_CONV_IMPLS, \
+                'Unknown implementation "{}"'.format(conv_impl)
 
         if conv_impl is None and debug:
             self.conv_impl = 'small'

@@ -105,3 +105,11 @@ class Log:
             return path + '/' + matches[-1][1]
 
         return None
+
+    @classmethod
+    def get_args(cls, path, filename='args.cson'):
+        with open(path + '/' + filename, 'r') as f:
+            args = cson.load(f)
+        return args
+
+

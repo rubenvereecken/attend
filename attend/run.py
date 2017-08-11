@@ -9,51 +9,80 @@ class Runner:
 
     def __init__(self):
         self.debug = '--debug' in sys.argv
+        self.defaults = Defaults(self.debug).__dict__
         self.parser = self._setup_parser()
 
 
     def _setup_parser(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument('-i', dest='data_file', required=True)
-        parser.add_argument('--val_data', type=str, default=None)
-        parser.add_argument('--debug', dest='debug', action='store_true')
-        parser.add_argument('--no-debug', dest='debug', action='store_false')
-        parser.add_argument('--log_dir', type=str, default='log',
-                            help='Directory to hold logs')
-        parser.add_argument('--prefix', type=str, default='')
-        parser.add_argument('--batch_size', type=int)
-        parser.add_argument('--val_batch_size', type=int)
-        parser.add_argument('--steps_per_epoch', type=int)
-        parser.add_argument('--num_epochs', type=int)
-        parser.add_argument('--time_steps', type=int)
-        parser.add_argument('--conv_impl', type=str)
-        parser.add_argument('--attention_impl', type=str)
-        parser.add_argument('--encode_hidden_units', type=int)
-        parser.add_argument('--shuffle_examples_capacity', type=int)
-        parser.add_argument('--dense_spec', type=str)
-        parser.add_argument('--learning_rate', type=float)
 
-        def _boolean_argument(name, default=None):
-            parser.add_argument('--{}'.format(name), dest=name, action='store_true')
-            parser.add_argument('--no_{}'.format(name), dest=name, action='store_false')
+        # Booleans are passed with a 0 or 1 on the CLI for easy scripting
+        self.boolean_args = []
+        def _boolean_argument(name, parser=parser, default=None):
+            # parser.add_argument('--{}'.format(name), dest=name, action='store_true')
+            parser.add_argument('--no_{}'.format(name), dest=name, action='store_const', const=0)
+            parser.add_argument('--{}'.format(name), dest=name, type=int)
+            # parser.add_argument('--{}'.format(name), dest=name, type=int)
+            self.boolean_args.append(name)
             parser.set_defaults(**{name: default})
 
-        _boolean_argument('encode_lstm')
-        _boolean_argument('shuffle_examples')
-        _boolean_argument('use_dropout')
-        _boolean_argument('use_maxnorm')
-        _boolean_argument('final_sigmoid')
-        _boolean_argument('save_eval_graph')
-        _boolean_argument('learn_initial_states')
+        logistics = parser.add_argument_group('Logistics')
+        logistics.add_argument('-i', '--data_file', dest='data_file', required=True)
+        logistics.add_argument('--val_data', type=str, default=None)
+        logistics.add_argument('--debug', dest='debug', action='store_true')
+        logistics.add_argument('--log_dir', type=str, default='log',
+                            help='Directory to hold logs')
+        logistics.add_argument('--prefix', type=str, default='')
+        _boolean_argument('save_eval_graph', logistics)
+        _boolean_argument('gen_log_dir', logistics)
 
-        parser.add_argument('--dropout', type=float)
+        experiment = parser.add_argument_group('Experiment')
+        experiment.add_argument('--steps_per_epoch', type=int)
+        experiment.add_argument('--num_epochs', type=int)
+        experiment.add_argument('--stats_every', type=int)
+
+        input = parser.add_argument_group('Input feeding')
+        input.add_argument('--batch_size', type=int)
+        input.add_argument('--val_batch_size', type=int)
+        input.add_argument('--shuffle_examples_capacity', type=int)
+        _boolean_argument('shuffle_examples', input)
+
+        encoder = parser.add_argument_group('Encoder')
+        encoder.add_argument('--conv_impl', type=str)
+        encoder.add_argument('--encode_hidden_units', type=int)
+        encoder.add_argument('--dense_spec', type=str)
+        _boolean_argument('encode_lstm', encoder)
+
+        network = parser.add_argument_group('Network')
+        network.add_argument('--update_rule', type=str)
+        network.add_argument('--learning_rate', type=float)
+        network.add_argument('--dropout', type=float)
+        network.add_argument('--time_steps', type=int)
+        _boolean_argument('use_dropout', network)
+        _boolean_argument('use_maxnorm', network)
+        _boolean_argument('learn_initial_states', network)
+
+        decoder = parser.add_argument_group('Decoder')
+        decoder.add_argument('--attention_impl', type=str)
+        decoder.add_argument('--attention_units', type=int)
+        decoder.add_argument('--num_hidden', type=int)
+        _boolean_argument('final_sigmoid', decoder)
+
+        registered_params = [action.dest for action in parser._optionals._group_actions[1:]]
 
         return parser
 
 
     def parse_args_and_setup(self):
-        defaults = Defaults(self.debug).__dict__
+        defaults = self.defaults
         args = self.parser.parse_args()
+        args_dict = vars(args)
+
+        # Convert 0/1 to boolean, keep None
+        for argname in self.boolean_args:
+            if not args_dict[argname] is None:
+                args_dict[argname] = bool(args_dict[argname])
+
         self.args = args
 
         # Process while defaults not set yet
