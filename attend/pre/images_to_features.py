@@ -57,7 +57,8 @@ def process_vids(
 
             _frame_gen = (_do_frames(batch) for batch in
                     util.batch(frame_names, batch_size))
-            frame_gen = util.LengthyGenerator(_frame_gen, len(frame_names))
+            n_batches = np.ceil(len(frame_names) / batch_size)
+            frame_gen = util.LengthyGenerator(_frame_gen, n_batches)
             frame_gen['feature_dim'] = feature_dim
             frame_gen['name'] = vid_name
             yield frame_gen
