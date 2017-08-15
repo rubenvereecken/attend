@@ -17,6 +17,8 @@ class AttendModel():
             dropout=None,
             use_dropout=True,
             final_activation=None,
+            # Variations to try
+            enc2lstm=False, enc2ctx=False,
             debug=True):
         """
 
@@ -24,6 +26,9 @@ class AttendModel():
             time_steps: For BPTT, or None for dynamic LSTM (unimplemented)
 
         """
+
+        self.enc2lstm = enc2lstm
+        self.enc2ctx = enc2ctx
 
         self.provider = provider
         self.encoder = encoder
@@ -112,7 +117,8 @@ class AttendModel():
             c = provider.state('lstm_c')
             h = provider.state('lstm_h')
             history = provider.state('history')
-            last_out = provider.state('last_out')
+            context = provider.state('context')
+            output = provider.state('output')
             first = provider.state('first')
         else:
             c, h = self._initial_lstm(x)
@@ -121,7 +127,7 @@ class AttendModel():
 
         outputs = []
         if self.attention_layer:
-            attention = self.attention_layer()
+            do_attention = self.attention_layer()
             attentions = []
             alphas = []
         else:
@@ -132,36 +138,47 @@ class AttendModel():
             lstm_scope = None
             decode_lstm_scope = None
             attention_scope = None
+
             for t in range(T):
                 if t == 0:
                     # Get the last output from previous batch
-                    true_prev_target = last_out
+                    true_prev_target = output
                 elif is_training:
                     # Feed back in last true input
                     true_prev_target = targets[:, t-1]
                 else:
                     # Feed back in previous prediction
-                    true_prev_target = outputs[-1]
+                    true_prev_target = output
 
+                with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
+                    # Context is just previous encoded when not using attention
+                    decoder_lstm_input = tf.concat([true_prev_target, context], 1, 'decoder_lstm_input')
+                    if self.enc2lstm:
+                        decoder_lstm_input = tf.concat([decoder_lstm_input, x[:,t,:]], 1)
+
+                    # _ and h are the same, the LSTM output
+                    _, (c, h) = lstm_cell(inputs=decoder_lstm_input, state=[c, h])
 
                 if self.attention_layer:
                     # for t = 0, use current and t-1 from history
                     # for t = T-1, use all of current frame and none from history
                     with tf.variable_scope(attention_scope or 'attention', reuse=t!=0) as attention_scope:
                         past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], 1, name='window')
-                        attention, alpha = attention(past_window, h, t!=0)
+                        attention, alpha = do_attention(past_window, c, t!=0)
                         attentions.append(attention)
                         alphas.append(alpha)
-                        decoder_lstm_input = tf.concat([true_prev_target, attention], 1)
+
+                        if self.enc2ctx:
+                            flat_history = tf.reshape(x, [batch_size, -1], name='flat_history')
+                            context = tf.concat([flat_history, attention], 1, name='enc2ctx')
+                        else:
+                            context = attention
                 else:
-                    decoder_lstm_input = tf.concat([true_prev_target, x[:,t,:]], 1)
+                    context = x[:,t,:]
+                    raise Exception('Ok have another look at this...')
 
-                with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
-                    # _ and h are the same, the LSTM output
-                    _, (c, h) = lstm_cell(inputs=decoder_lstm_input, state=[c, h])
-
-                with tf.name_scope(decode_lstm_scope or 'decode_lstm_step') as decode_lstm_scope:
-                    output = self._decode(x[:,t,:], h, dropout=use_dropout, reuse=(t!=0))
+                with tf.name_scope(decode_lstm_scope or 'final_decode') as decode_lstm_scope:
+                    output = self._decode(context, h, dropout=use_dropout, reuse=(t!=0))
                     outputs.append(output)
 
             outputs = tf.stack(outputs, axis=1) # B x T x 1
