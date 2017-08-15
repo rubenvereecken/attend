@@ -17,6 +17,8 @@ class AttendModel():
             dropout=None,
             use_dropout=True,
             final_activation=None,
+            sampling_scheme='linear',
+            sampling_min_epsilon=.75, # 75% chance to pick truth
             # Variations to try
             enc2lstm=False, enc2ctx=False,
             debug=True):
@@ -29,6 +31,8 @@ class AttendModel():
 
         self.enc2lstm = enc2lstm
         self.enc2ctx = enc2ctx
+        self._sampling_scheme = sampling_scheme
+        self._sampling_min_epsilon = sampling_min_epsilon
 
         self.provider = provider
         self.encoder = encoder
@@ -75,7 +79,7 @@ class AttendModel():
         self.debug = debug
 
 
-    def build_model(self, provider, is_training=True):
+    def build_model(self, provider, is_training=True, total_steps=None):
         """Build the entire model
 
         Args:
@@ -84,6 +88,9 @@ class AttendModel():
         """
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
+
+        if is_training:
+            assert not total_steps is None, "Need total steps for scheduled sampling"
 
         assert targets is None or targets.shape.ndims == 3, \
                 'The target is assumed to be B x T x 1'
@@ -140,19 +147,16 @@ class AttendModel():
             attention_scope = None
 
             for t in range(T):
-                if t == 0:
-                    # Get the last output from previous batch
-                    true_prev_target = output
-                elif is_training:
-                    # Feed back in last true input
-                    true_prev_target = targets[:, t-1]
+                # y_t-1
+                if is_training:
+                    prev_target = self._sample_output(targets[:,t-1], output, total_steps)
                 else:
                     # Feed back in previous prediction
-                    true_prev_target = output
+                    prev_target = output
 
                 with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
                     # Context is just previous encoded when not using attention
-                    decoder_lstm_input = tf.concat([true_prev_target, context], 1, 'decoder_lstm_input')
+                    decoder_lstm_input = tf.concat([prev_target, context], 1, 'decoder_lstm_input')
                     if self.enc2lstm:
                         decoder_lstm_input = tf.concat([decoder_lstm_input, x[:,t,:]], 1)
 
@@ -318,6 +322,30 @@ class AttendModel():
                 out['total']['mse_tf'] = tfmse
 
             return out
+
+
+    def _sample_output(self, truth, output, decay_steps):
+        """
+        Scheduled Sampling
+
+        Pick `truth`, the previously generated output, with chance epsilon
+        where alpha is calculated according to an annealing scheme
+        """
+
+        self._sampling_min_epsilon
+        global_step = tf.train.get_global_step()
+
+        if self._sampling_scheme == 'linear':
+            epsilon = self.tf.maximum(self._sampling_min_epsilon, 1 - (global_step / total_steps))
+        # elif self.scheduled_sampling_scheme == 'inverse_sigmoid':
+        #     epsilon =
+        else:
+            raise ValueError('Unknown scheduled sampling scheme')
+
+        return tf.cond(epsilon > tf.random_uniform([]),
+                true_fn=lambda: truth,
+                false_fn=lambda: output)
+
 
 
     def _decode(self, x, h, dropout=False, reuse=False):

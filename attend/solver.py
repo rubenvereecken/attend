@@ -99,6 +99,7 @@ class AttendSolver():
         else:
             progress_wrapper = lambda i, **kwargs: i
 
+        total_steps = num_epochs * steps_per_epoch
         g = tf.get_default_graph()
 
         # For now, its results are stored inside the provider
@@ -108,7 +109,7 @@ class AttendSolver():
 
         # Prediction and loss
         with tf.variable_scope(tf.get_variable_scope()):
-            out, ctx = self.model.build_model(provider, True)
+            out, ctx = self.model.build_model(provider, True, total_steps)
             outputs = out['output']
             loss_op = self.model.calculate_loss(outputs, provider.targets, ctx['length'])
 
