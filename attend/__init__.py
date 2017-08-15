@@ -23,6 +23,7 @@ from .solver import AttendSolver
 from .model import AttendModel
 from .encoder import Encoder
 from .evaluate import Evaluator, ImportEvaluator, RebuildEvaluator
+from .common import *
 
 
 TIMESTAMP_FORMAT = "%d-%m-%Y-%H-%M-%S"

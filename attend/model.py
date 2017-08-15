@@ -16,7 +16,7 @@ class AttendModel():
             time_steps=None, attention_impl=None, attention_units=None,
             dropout=None,
             use_dropout=True,
-            final_sigmoid=False,
+            final_activation=None,
             debug=True):
         """
 
@@ -33,7 +33,11 @@ class AttendModel():
         self.H = num_hidden
         self.dropout = dropout
         self.use_dropout_for_training = use_dropout
-        self.final_sigmoid = final_sigmoid
+
+        if isinstance(final_activation, str):
+            self.final_activation = attend.get_activation(final_activation)
+        else:
+            self.final_activation = final_activation
 
         # If None, it's variable, if an int, it's known. Can also be Tensor
         self.T = time_steps
@@ -118,10 +122,10 @@ class AttendModel():
         outputs = []
         if self.attention_layer:
             attention = self.attention_layer()
-            contexts = []
+            attentions = []
             alphas = []
         else:
-            contexts = None
+            attentions = None
             alphas = None
 
         with tf.variable_scope('decoder'):
@@ -145,10 +149,10 @@ class AttendModel():
                     # for t = T-1, use all of current frame and none from history
                     with tf.variable_scope(attention_scope or 'attention', reuse=t!=0) as attention_scope:
                         past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], 1, name='window')
-                        context, alpha = attention(past_window, h, t!=0)
-                        contexts.append(context)
+                        attention, alpha = attention(past_window, h, t!=0)
+                        attentions.append(attention)
                         alphas.append(alpha)
-                        decoder_lstm_input = tf.concat([true_prev_target, context], 1)
+                        decoder_lstm_input = tf.concat([true_prev_target, attention], 1)
                 else:
                     decoder_lstm_input = tf.concat([true_prev_target, x[:,t,:]], 1)
 
@@ -157,12 +161,12 @@ class AttendModel():
                     _, (c, h) = lstm_cell(inputs=decoder_lstm_input, state=[c, h])
 
                 with tf.name_scope(decode_lstm_scope or 'decode_lstm_step') as decode_lstm_scope:
-                    output = self._decode(c, dropout=True, reuse=(t!=0))
+                    output = self._decode(x[:,t,:], h, dropout=use_dropout, reuse=(t!=0))
                     outputs.append(output)
 
             outputs = tf.stack(outputs, axis=1) # B x T x 1
             if self.attention_layer:
-                contexts = tf.stack(contexts, axis=1, name='context')
+                attentions = tf.stack(attentions, axis=1, name='attention')
                 alphas = tf.stack(alphas, axis=1, name='alpha')
 
         control_deps = []
@@ -209,10 +213,10 @@ class AttendModel():
 
         if self.attention_layer:
             out.update({
-                'context': contexts,
+                'attention': attentions,
                 'alpha': alphas,
                 })
-            tf_util.add_to_collection(attend.GraphKeys.OUTPUT, [contexts, alphas])
+            tf_util.add_to_collection(attend.GraphKeys.OUTPUT, [attentions, alphas])
 
         return out, context
 
@@ -299,13 +303,13 @@ class AttendModel():
             return out
 
 
-    def _decode(self, h, dropout=False, reuse=False):
+    def _decode(self, x, h, dropout=False, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):
-            W = tf.get_variable('W', [h.shape[1], 1], initializer=self.weight_initializer)
+            decode_input = tf.concat([x, h], 1, name='decode_input')
+            W = tf.get_variable('W', [decode_input.shape[1], 1], initializer=self.weight_initializer)
             b = tf.get_variable('b', [1], initializer=self.const_initializer)
             out = tf.matmul(h, W) + b
-            if self.final_sigmoid:
-                out = tf.nn.sigmoid(out)
+            out = self.final_activation(out)
             return out
 
 
