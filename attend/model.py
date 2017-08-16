@@ -18,8 +18,8 @@ class AttendModel():
                  dropout=None,
                  use_dropout=True,
                  final_activation=None,
-                 sampling_scheme='linear',
-                 sampling_min_epsilon=.75,  # 75% chance to pick truth
+                 sampling_scheme=None,
+                 sampling_min=.75,  # 75% chance to pick truth
                  # Variations to try
                  enc2lstm=False, enc2ctx=False,
                  debug=True):
@@ -32,7 +32,7 @@ class AttendModel():
         self.enc2lstm = enc2lstm
         self.enc2ctx = enc2ctx
         self._sampling_scheme = sampling_scheme
-        self._sampling_min_epsilon = sampling_min_epsilon
+        self._sampling_min = sampling_min
 
         self.provider = provider
         self.encoder = encoder
@@ -127,7 +127,8 @@ class AttendModel():
             history = provider.state('history')
             context = provider.state('context')
             output = provider.state('output')
-            # first = provider.state('first')
+            target = provider.state('target')
+            first = provider.state('first')
         else:
             c, h = self._initial_lstm(x)
 
@@ -147,11 +148,27 @@ class AttendModel():
             decode_lstm_scope = None
             attention_scope = None
 
+            if is_training:
+                global_step = tf.train.get_global_step()
+                # One epsilon per batch
+                epsilon = self._sample_epsilon(global_step, total_steps)
+
             for t in range(T):
                 # y_t-1
-                if is_training:
+                if is_training and t == 0:
+                    # If not first, then this is just normal sampling
+                    # If it is first, use the learned 'output' value
+                    prev_target = self._sample_output(target, output, epsilon)
+
+                    # _sample = lambda i: self._sample_output(prev_target[], output, epsilons[0])
+
+                    # tf.map_fn(lambda i: tf.cond(first[i],
+                    #                             true_fn=output,
+                    #                             false_fn=,
+                    #           tf.range(batch_size), dtype=tf.float32)
+                elif is_training:
                     prev_target = self._sample_output(
-                        targets[:, t - 1], output, total_steps)
+                        targets[:, t - 1], output, epsilon)
                 else:
                     # Feed back in previous prediction
                     prev_target = output
@@ -220,6 +237,7 @@ class AttendModel():
                     state_saver.save_state('history', x, 'history'),
                     state_saver.save_state('context', context, 'context'),
                     state_saver.save_state('output', output, 'output'),
+                    state_saver.save_state('target', targets[:,-1,:], 'output')
                 ]
                 save_state = tf.group(*state_saves)
                 control_deps.append(save_state)
@@ -354,28 +372,72 @@ class AttendModel():
 
             return out
 
-    def _sample_output(self, truth, output, decay_steps):
+    def _sample_epsilon(self, time_step, decay_steps):
         """
         Scheduled Sampling
 
-        Pick `truth`, the previously generated output, with chance epsilon
-        where alpha is calculated according to an annealing scheme
+        Generate an epsilon for each time step, to be used later by the sampler
         """
 
-        global_step = tf.train.get_global_step()
+        def _inverse_sigmoid_np(k, p_min, x):
+            return p_min + k / (k + np.exp(x/k)) / (1. / (1-p_min))
+
+        def _inverse_sigmoid_tf(k, p_min, x):
+            return p_min + k / (k + tf.exp(x/k)) / (1. / (1-p_min))
+
+        def _solve_for_k(p_min, decay_steps):
+            # Solve for parameter k such that the inverse sigmoid gently curves
+            # from 1 to p_min with the half-way point exactly halfway the decay
+            from scipy.optimize import fsolve
+            M = p_min + (1 - p_min) / 2
+            X = decay_steps / 2
+            x0 = X / np.log(X)
+            inverse_sigmoid_instance = partial(_inverse_sigmoid_np, p_min=p_min, x=X)
+            k = fsolve(lambda k: inverse_sigmoid_instance(k) - M, x0)[0]
+            return k
+
+        def _linear_tf(p_min, decay_steps, x):
+            b = 1 # Offset 1, starting point
+            a = (p_min - b) / decay_steps
+            o = a * x + b
+            return tf.maximum(p_min, o)
+
 
         if self._sampling_scheme == 'linear':
-            epsilon = tf.maximum(
-                self._sampling_min_epsilon,
-                tf.cast(1 - (global_step / decay_steps), tf.float32))
-        # elif self.scheduled_sampling_scheme == 'inverse_sigmoid':
-        #     epsilon =
+            epsilon = _linear_tf(self._sampling_min, decay_steps, time_step)
+        elif self._sampling_scheme == 'inverse_sigmoid':
+            k = _solve_for_k(self._sampling_min, decay_steps)
+            epsilon = _inverse_sigmoid_tf(k, self._sampling_min, time_step)
         else:
             raise ValueError('Unknown scheduled sampling scheme')
 
-        return tf.cond(epsilon > tf.random_uniform([]),
-                       true_fn=lambda: truth,
-                       false_fn=lambda: output)
+        epsilon = tf.cast(epsilon, tf.float32)
+        tf.summary.scalar('sampling_epsilon', epsilon, family='train')
+
+        return epsilon
+
+
+    def _sample_output(self, truth, output, epsilon):
+        """
+        Scheduled Sampling
+
+        Pick `truth`, with chance epsilon or the previously generated output
+        with chance 1 - epsilon
+        Epsilon is calculated by _sample_epsilons
+
+        Each batch element gets sampled separately but only one epsilon
+        """
+        B = tf.shape(truth)[0]
+        randoms = tf.random_uniform([B])
+
+        def _sample(i):
+            return tf.cond(epsilon > randoms[i],
+                       true_fn=lambda: truth[i],
+                       false_fn=lambda: output[i])
+
+        selected = tf.map_fn(_sample, tf.range(B), dtype=tf.float32)
+
+        return selected
 
     def _decode(self, x, h, dropout=False, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):

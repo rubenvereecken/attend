@@ -68,6 +68,8 @@ class Runner:
         decoder.add_argument('--attention_units', type=int)
         decoder.add_argument('--num_hidden', type=int)
         decoder.add_argument('--final_activation', type=str)
+        decoder.add_argument('--sampling_scheme', type=str)
+        decoder.add_argument('--sampling_min', type=float)
 
         registered_params = [action.dest for action in parser._optionals._group_actions[1:]]
 

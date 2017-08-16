@@ -59,6 +59,7 @@ class Provider():
                 'history': tf.zeros([self.T, np.prod(self.dim_encoded)], dtype=tf.float32),
                 'context': tf.zeros([self.dim_encoded], dtype=tf.float32),
                 'output': tf.zeros([1], dtype=tf.float32),
+                'target': tf.zeros([1], dtype=tf.float32),
                 'first': tf.constant(True)
             }
 

@@ -28,7 +28,11 @@ class Defaults:
 
         attention_units           = 512,
         learn_initial_states      = True,
-        final_activation = 'tanh'
+        final_activation = 'tanh',
+
+        # Scheduled sampling
+        sampling_scheme = 'inverse_sigmoid',
+        sampling_min = .75
     )
 
     debug_params = dict(
