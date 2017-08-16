@@ -212,21 +212,16 @@ class AttendModel():
         if state_saver is not None:
             save_state_scope = 'save_state'
             with tf.variable_scope(save_state_scope):
-                save_state = tf.group(state_saver.save_state(
-                    'lstm_c', c, 'lstm_c'),
-                    state_saver.save_state(
-                    'lstm_h', h, 'lstm_h'),
-                    state_saver.save_state(
-                    'first', tf.zeros(
-                        [batch_size],
-                        dtype=tf.bool),
-                    'first'),
-                    state_saver.save_state(
-                    'history', x, 'history'),
-                    state_saver.save_state(
-                    'last_out', outputs[:, -1],
-                    'last_out'))
-
+                state_saves = [
+                    state_saver.save_state('lstm_c', c, 'lstm_c'),
+                    state_saver.save_state('lstm_h', h, 'lstm_h'),
+                    state_saver.save_state('first', tf.zeros(
+                        [batch_size], dtype=tf.bool), 'first'),
+                    state_saver.save_state('history', x, 'history'),
+                    state_saver.save_state('context', context, 'context'),
+                    state_saver.save_state('output', output, 'output'),
+                ]
+                save_state = tf.group(*state_saves)
                 control_deps.append(save_state)
 
                 # Makes it easier by just injecting the save state control op
@@ -367,12 +362,12 @@ class AttendModel():
         where alpha is calculated according to an annealing scheme
         """
 
-        self._sampling_min_epsilon
         global_step = tf.train.get_global_step()
 
         if self._sampling_scheme == 'linear':
-            epsilon = self.tf.maximum(
-                self._sampling_min_epsilon, 1 - (global_step / decay_steps))
+            epsilon = tf.maximum(
+                self._sampling_min_epsilon,
+                tf.cast(1 - (global_step / decay_steps), tf.float32))
         # elif self.scheduled_sampling_scheme == 'inverse_sigmoid':
         #     epsilon =
         else:
@@ -385,13 +380,9 @@ class AttendModel():
     def _decode(self, x, h, dropout=False, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):
             decode_input = tf.concat([x, h], 1, name='decode_input')
-            W = tf.get_variable(
-                'W', [decode_input.shape[1],
-                      1],
-                initializer=self.weight_initializer)
-            b = tf.get_variable('b', [1], initializer=self.const_initializer)
-            out = tf.matmul(h, W) + b
-            out = self.final_activation(out)
+            out = tf.layers.dense(decode_input, 1, activation=self.final_activation,
+                                  kernel_initializer=self.weight_initializer,
+                                  name='final_dense')
             return out
 
     def _initial_lstm(self, features, reuse=False):
