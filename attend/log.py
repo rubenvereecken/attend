@@ -67,10 +67,13 @@ class Log:
     @classmethod
     def save_git_version(cls, file_name='gitversion'):
         import subprocess
-        sha = subprocess.check_output(['git', 'describe', '--always'])
-        file_path = cls.log_dir + '/{}'.format(file_name)
-        with open(file_path, 'w') as f:
-            f.write(sha.decode())
+        try:
+            sha = subprocess.check_output(['git', 'describe', '--always'])
+            file_path = cls.log_dir + '/{}'.format(file_name)
+            with open(file_path, 'w') as f:
+                f.write(sha.decode())
+        except:
+            print('Failed to get git version, skipping')
 
     @classmethod
     def save_hostname(cls, file_name='host'):

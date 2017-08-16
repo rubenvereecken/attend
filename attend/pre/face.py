@@ -61,6 +61,7 @@ def extract_face(img, pts, face_ratio=.8):
     bbox = bounding_box(pts, True)
     bbox = pad_to_rectangle(bbox)
     bbox_lengths = box_lengths(bbox)
+    # print(bbox_lengths)
     assert bbox_lengths[0] == bbox_lengths[1], '{} != {}'.format(bbox_lengths[0], bbox_lengths[1])
     bbox_size = np.apply_along_axis(np.diff, 0, bbox)[0,0]
     #face_scale = face_res / bbox_size
@@ -82,7 +83,10 @@ def preprocess_and_extract_face(img, pts):
     pts_transformed, img_transformed = warp_to_mean_shape(pts, img)
     img_cropped = extract_face(img_transformed, pts_transformed)
     # assert img_cropped.shape[0] == img_cropped.shape[1], paint_and_save(img_cropped, pts_transformed)
+    if 0 in img_cropped.shape:
+        raise Exception('Cropped img with a 0 dimension')
     img_final = resize(img_cropped)
+    # paint_and_save(img_transformed, pts_transformed, 'test.png')
     return img_final
 
 
@@ -145,6 +149,9 @@ def crop_to(img, box):
 
 
 def resize(img, res=224):
+    # if img.shape[0] == 0 or img.shape[1] == 0:
+    #     import pdb
+    #     pdb.set_trace()
     # Ehh x and y flipped again
     resized = cv2.resize(img,None,fx=res/img.shape[1], fy=res/img.shape[0], interpolation = cv2.INTER_CUBIC)
     if not (resized.shape[0] == res and resized.shape[1] == res):
@@ -155,13 +162,12 @@ def resize(img, res=224):
     return resized
 
 
-def paint_and_save(img, pts, filename='tmp.png'):
-    path = '/home/ruben/tmp'
+def paint_and_save(img, pts, path='/home/ruben/tmp', filename='tmp.png'):
     import matplotlib.pyplot as plt
-    print(img.shape)
 
+    plt.clf()
     plt.imshow(img)
-    plt.scatter(pts[:,0], pts[:,1], marker='.')
+    plt.scatter(pts[:,0], pts[:,1], marker='.', s=10, color='red')
     plt.savefig(path + '/' + filename)
 
 

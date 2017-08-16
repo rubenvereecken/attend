@@ -35,6 +35,7 @@ class Runner:
         logistics.add_argument('--prefix', type=str, default='')
         _boolean_argument('save_eval_graph', logistics)
         _boolean_argument('gen_log_dir', logistics)
+        _boolean_argument('show_progress_bar', logistics)
 
         experiment = parser.add_argument_group('Experiment')
         experiment.add_argument('--steps_per_epoch', type=int)

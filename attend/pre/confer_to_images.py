@@ -42,18 +42,37 @@ def process_vids(
         debug=False
         ):
 
+    if debug:
+        debug_out_dir = out_dir + '-debug'
+        debug_input_dir = debug_out_dir + '/input'
+        debug_transformed_dir = debug_out_dir + '/transformed'
+        shutil.rmtree(debug_out_dir, ignore_errors=True)
+        os.makedirs(debug_input_dir)
+        os.makedirs(debug_transformed_dir)
+
     from attend.pre import face, util
 
     def _do_frame(frame_file):
+        frame_name = frame_file.split('/')[-1]
         img = imread(frame_file)
         pts_file = frame_file.replace('.jpg', '.pts')
         pts = util.load_pts(pts_file)
+        if debug:
+            face.paint_and_save(img, pts, debug_input_dir, frame_name)
+
         try:
-            bbox = face.preprocess_and_extract_face(img, pts)
+            # This is just face.preprocess_and_extract_face's body
+            pts_transformed, img_transformed = face.warp_to_mean_shape(pts, img)
+            img_cropped = face.extract_face(img_transformed, pts_transformed)
+            if 0 in img_cropped.shape:
+                raise Exception('Cropped img with a 0 dimension')
+            if debug:
+                face.paint_and_save(img_transformed, pts_transformed, debug_transformed_dir, frame_name)
+            bbox = face.resize(img_cropped)
         except Exception as e:
             print('Failed img {}'.format(frame_file))
             print(e)
-            raise e
+            # raise e
             bbox = np.zeros((224,224,3))
         return bbox
 
