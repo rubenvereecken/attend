@@ -1,6 +1,9 @@
 import tensorflow as tf
 
-identity = lambda x, **kwargs: x
+
+def identity(x, **kwargs):
+    return x
+
 
 activations = dict(
     none=identity,
@@ -8,6 +11,7 @@ activations = dict(
     sigmoid=tf.nn.sigmoid,
     relu=tf.nn.relu
 )
+
 
 def get_activation(s):
     if s not in activations:
