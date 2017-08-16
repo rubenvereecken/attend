@@ -16,7 +16,11 @@ class AttendModel():
             time_steps=None, attention_impl=None, attention_units=None,
             dropout=None,
             use_dropout=True,
-            final_sigmoid=False,
+            final_activation=None,
+            sampling_scheme='linear',
+            sampling_min_epsilon=.75, # 75% chance to pick truth
+            # Variations to try
+            enc2lstm=False, enc2ctx=False,
             debug=True):
         """
 
@@ -24,6 +28,11 @@ class AttendModel():
             time_steps: For BPTT, or None for dynamic LSTM (unimplemented)
 
         """
+
+        self.enc2lstm = enc2lstm
+        self.enc2ctx = enc2ctx
+        self._sampling_scheme = sampling_scheme
+        self._sampling_min_epsilon = sampling_min_epsilon
 
         self.provider = provider
         self.encoder = encoder
@@ -33,7 +42,11 @@ class AttendModel():
         self.H = num_hidden
         self.dropout = dropout
         self.use_dropout_for_training = use_dropout
-        self.final_sigmoid = final_sigmoid
+
+        if isinstance(final_activation, str):
+            self.final_activation = attend.get_activation(final_activation)
+        else:
+            self.final_activation = final_activation
 
         # If None, it's variable, if an int, it's known. Can also be Tensor
         self.T = time_steps
@@ -66,7 +79,7 @@ class AttendModel():
         self.debug = debug
 
 
-    def build_model(self, provider, is_training=True):
+    def build_model(self, provider, is_training=True, total_steps=None):
         """Build the entire model
 
         Args:
@@ -75,6 +88,9 @@ class AttendModel():
         """
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
+
+        if is_training:
+            assert not total_steps is None, "Need total steps for scheduled sampling"
 
         assert targets is None or targets.shape.ndims == 3, \
                 'The target is assumed to be B x T x 1'
@@ -108,7 +124,8 @@ class AttendModel():
             c = provider.state('lstm_c')
             h = provider.state('lstm_h')
             history = provider.state('history')
-            last_out = provider.state('last_out')
+            context = provider.state('context')
+            output = provider.state('output')
             first = provider.state('first')
         else:
             c, h = self._initial_lstm(x)
@@ -117,52 +134,60 @@ class AttendModel():
 
         outputs = []
         if self.attention_layer:
-            attention = self.attention_layer()
-            contexts = []
+            do_attention = self.attention_layer()
+            attentions = []
             alphas = []
         else:
-            contexts = None
+            attentions = None
             alphas = None
 
         with tf.variable_scope('decoder'):
             lstm_scope = None
             decode_lstm_scope = None
             attention_scope = None
+
             for t in range(T):
-                if t == 0:
-                    # Get the last output from previous batch
-                    true_prev_target = last_out
-                elif is_training:
-                    # Feed back in last true input
-                    true_prev_target = targets[:, t-1]
+                # y_t-1
+                if is_training:
+                    prev_target = self._sample_output(targets[:,t-1], output, total_steps)
                 else:
                     # Feed back in previous prediction
-                    true_prev_target = outputs[-1]
+                    prev_target = output
 
+                with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
+                    # Context is just previous encoded when not using attention
+                    decoder_lstm_input = tf.concat([prev_target, context], 1, 'decoder_lstm_input')
+                    if self.enc2lstm:
+                        decoder_lstm_input = tf.concat([decoder_lstm_input, x[:,t,:]], 1)
+
+                    # _ and h are the same, the LSTM output
+                    _, (c, h) = lstm_cell(inputs=decoder_lstm_input, state=[c, h])
 
                 if self.attention_layer:
                     # for t = 0, use current and t-1 from history
                     # for t = T-1, use all of current frame and none from history
                     with tf.variable_scope(attention_scope or 'attention', reuse=t!=0) as attention_scope:
                         past_window = tf.concat([history[:,t+1:,:], x[:,:t+1,:]], 1, name='window')
-                        context, alpha = attention(past_window, h, t!=0)
-                        contexts.append(context)
+                        attention, alpha = do_attention(past_window, c, t!=0)
+                        attentions.append(attention)
                         alphas.append(alpha)
-                        decoder_lstm_input = tf.concat([true_prev_target, context], 1)
+
+                        if self.enc2ctx:
+                            flat_history = tf.reshape(x, [batch_size, -1], name='flat_history')
+                            context = tf.concat([flat_history, attention], 1, name='enc2ctx')
+                        else:
+                            context = attention
                 else:
-                    decoder_lstm_input = tf.concat([true_prev_target, x[:,t,:]], 1)
+                    context = x[:,t,:]
+                    raise Exception('Ok have another look at this...')
 
-                with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
-                    # _ and h are the same, the LSTM output
-                    _, (c, h) = lstm_cell(inputs=decoder_lstm_input, state=[c, h])
-
-                with tf.name_scope(decode_lstm_scope or 'decode_lstm_step') as decode_lstm_scope:
-                    output = self._decode(c, dropout=True, reuse=(t!=0))
+                with tf.name_scope(decode_lstm_scope or 'final_decode') as decode_lstm_scope:
+                    output = self._decode(context, h, dropout=use_dropout, reuse=(t!=0))
                     outputs.append(output)
 
             outputs = tf.stack(outputs, axis=1) # B x T x 1
             if self.attention_layer:
-                contexts = tf.stack(contexts, axis=1, name='context')
+                attentions = tf.stack(attentions, axis=1, name='attention')
                 alphas = tf.stack(alphas, axis=1, name='alpha')
 
         control_deps = []
@@ -209,10 +234,10 @@ class AttendModel():
 
         if self.attention_layer:
             out.update({
-                'context': contexts,
+                'attention': attentions,
                 'alpha': alphas,
                 })
-            tf_util.add_to_collection(attend.GraphKeys.OUTPUT, [contexts, alphas])
+            tf_util.add_to_collection(attend.GraphKeys.OUTPUT, [attentions, alphas])
 
         return out, context
 
@@ -299,13 +324,37 @@ class AttendModel():
             return out
 
 
-    def _decode(self, h, dropout=False, reuse=False):
+    def _sample_output(self, truth, output, decay_steps):
+        """
+        Scheduled Sampling
+
+        Pick `truth`, the previously generated output, with chance epsilon
+        where alpha is calculated according to an annealing scheme
+        """
+
+        self._sampling_min_epsilon
+        global_step = tf.train.get_global_step()
+
+        if self._sampling_scheme == 'linear':
+            epsilon = self.tf.maximum(self._sampling_min_epsilon, 1 - (global_step / total_steps))
+        # elif self.scheduled_sampling_scheme == 'inverse_sigmoid':
+        #     epsilon =
+        else:
+            raise ValueError('Unknown scheduled sampling scheme')
+
+        return tf.cond(epsilon > tf.random_uniform([]),
+                true_fn=lambda: truth,
+                false_fn=lambda: output)
+
+
+
+    def _decode(self, x, h, dropout=False, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):
-            W = tf.get_variable('W', [h.shape[1], 1], initializer=self.weight_initializer)
+            decode_input = tf.concat([x, h], 1, name='decode_input')
+            W = tf.get_variable('W', [decode_input.shape[1], 1], initializer=self.weight_initializer)
             b = tf.get_variable('b', [1], initializer=self.const_initializer)
             out = tf.matmul(h, W) + b
-            if self.final_sigmoid:
-                out = tf.nn.sigmoid(out)
+            out = self.final_activation(out)
             return out
 
 

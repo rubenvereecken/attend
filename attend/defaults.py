@@ -27,8 +27,8 @@ class Defaults:
         save_eval_graph           = True,
 
         attention_units           = 512,
-        final_sigmoid             = False,
-        learn_initial_states      = True
+        learn_initial_states      = True,
+        final_activation = 'tanh'
     )
 
     debug_params = dict(

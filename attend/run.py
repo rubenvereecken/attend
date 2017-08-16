@@ -67,7 +67,7 @@ class Runner:
         decoder.add_argument('--attention_impl', type=str)
         decoder.add_argument('--attention_units', type=int)
         decoder.add_argument('--num_hidden', type=int)
-        _boolean_argument('final_sigmoid', decoder)
+        decoder.add_argument('--final_activation', type=str)
 
         registered_params = [action.dest for action in parser._optionals._group_actions[1:]]
 
