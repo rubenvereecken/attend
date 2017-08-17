@@ -233,7 +233,7 @@ class FileProvider(Provider):
             seq_shape = readers.read_shape_from_tfrecords_for(filenames[0])
             # TODO just flatten it for now, might want shape back later
             dim_feature = (np.prod(seq_shape[1:]),)
-            log.warning('%s', dim_feature)
+            # log.warning('%s', dim_feature)
             self.input_producer = partial(readers.read_single_sequence_example_fom_tfrecord,
                                           filenames[0], feat_name)
 

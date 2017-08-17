@@ -210,7 +210,6 @@ class AttendModel():
                             context = attention
                 else:
                     context = x[:, t, :]
-                    raise Exception('Ok have another look at this...')
 
                 with tf.name_scope(decode_lstm_scope or 'final_decode') as decode_lstm_scope:
                     output = self._decode(
@@ -236,7 +235,7 @@ class AttendModel():
                         [batch_size], dtype=tf.bool), 'first'),
                     state_saver.save_state('history', x, 'history'),
                     state_saver.save_state('context', context, 'context'),
-                    state_saver.save_state('output', output, 'output'),
+                    state_saver.save_state('output', output, 'last_output'),
                     state_saver.save_state('target', targets[:,-1,:], 'output')
                 ]
                 save_state = tf.group(*state_saves)
@@ -265,18 +264,18 @@ class AttendModel():
         assert outputs.shape.ndims == 3, 'B x T x 1'
 
         out = {
-            'output': outputs,
+            'output': tf.identity(outputs, name='output'),
         }
-        tf_util.add_to_collection(attend.GraphKeys.OUTPUT, outputs)
+        tf_util.add_to_collection(attend.GraphKeys.OUTPUT, out['output'])
 
         if self.attention_layer:
             out.update({
-                'attention': attentions,
-                'alpha': alphas,
+                'attention': tf.identity(attentions, name='attention'),
+                'alpha': tf.identity(alphas, name='alpha'),
             })
             tf_util.add_to_collection(
                 attend.GraphKeys.OUTPUT, [
-                    attentions, alphas])
+                    out['attention'], out['alpha']])
 
         return out, context
 

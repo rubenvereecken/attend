@@ -101,8 +101,8 @@ class Evaluator:
         # total = { 'output': np.empty((l,1)) }
         total = dict(output=[])
 
-        if 'context' in self.out_ops:
-            total.update(dict(context=[], alpha=[]))
+        if 'alpha' in self.out_ops:
+            total.update(dict(attention=[], alpha=[]))
 
         state_saver = self.state_saver
         key = '{}:{}'.format(key, '0')

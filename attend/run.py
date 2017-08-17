@@ -107,7 +107,7 @@ class Runner:
         log = Log.get_logger(__name__)
 
         if 'LD_PRELOAD' in os.environ and 'tcmalloc' in os.environ['LD_PRELOAD']:
-            log.debug('Using tcmalloc, good on you!')
+            log.info('Using tcmalloc, good on you!')
         else:
             log.warning('NOT using tcmalloc')
 
