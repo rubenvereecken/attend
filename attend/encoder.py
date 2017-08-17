@@ -10,7 +10,7 @@ class Encoder():
 
     def __init__(self, batch_size, encode_hidden_units=0, time_steps=None,
                  debug=True, conv_impl=None, dense_layer=0, dropout=.75,
-                 use_maxnorm=True,
+                 use_maxnorm=False,
                  dense_spec=None,
                  encode_lstm=None
                  ):
@@ -115,7 +115,7 @@ class Encoder():
                 x = tf.nn.dropout(x, self.dropout, name='dropout_{}'.format(n))
 
             if self.use_maxnorm:
-                x = tf.clip_by_norm(x, 3, name='dropout_{}'.format(n))
+                x = tf.clip_by_norm(x, 3, name='maxnorm_{}'.format(n))
 
         log.debug('Built %s dense layers sizes %s', n, sizes)
 

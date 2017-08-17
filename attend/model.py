@@ -156,16 +156,27 @@ class AttendModel():
             for t in range(T):
                 # y_t-1
                 if is_training and t == 0:
-                    # If not first, then this is just normal sampling
-                    # If it is first, use the learned 'output' value
+                    # This would be the naive case, learn two input values
                     prev_target = self._sample_output(target, output, epsilon)
 
-                    # _sample = lambda i: self._sample_output(prev_target[], output, epsilons[0])
+                    # NOTE disabled for now because it looks like a lot of
+                    # trouble for barely anything in return
+                    # If not first, then this is just normal sampling
+                    # If it is first, use the learned 'output' value
+                    # def _sample_single(i):
+                    #     # Turn into singleton batches then squeeze
+                    #     return lambda: tf.squeeze(self._sample_output(
+                    #         tf.expand_dims(target[i], 0),
+                    #         tf.expand_dims(output[i], 0), epsilon), 0)
 
-                    # tf.map_fn(lambda i: tf.cond(first[i],
-                    #                             true_fn=output,
-                    #                             false_fn=,
-                    #           tf.range(batch_size), dtype=tf.float32)
+                    # def _sample_unless_first(i):
+                    #     return tf.cond(first[i],
+                    #                    true_fn=lambda: output[i],
+                    #                    false_fn=_sample_single(i))
+
+                    # prev_target = tf.map_fn(_sample_unless_first,
+                    #                         tf.range(batch_size),
+                    #                         dtype=tf.float32)
                 elif is_training:
                     prev_target = self._sample_output(
                         targets[:, t - 1], output, epsilon)

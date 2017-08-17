@@ -90,6 +90,20 @@ class Log:
             cson.dump(dict(d), f, sort_keys=True, indent=4)
 
     @classmethod
+    def save_condor(cls, file_name='classad.condor'):
+        import subprocess
+        try:
+            ad = subprocess.check_output(['condor_status', '$(hostname)', '-l'])
+            ad = ad.decode()
+            ad_lines = list(filter(lambda x: len(x) > 0, ad.split('\n')))
+            ad = '\n'.join(sorted(ad_lines))
+            file_path = cls.log_dir + '/{}'.format(file_name)
+            with open(file_path, 'w') as f:
+                f.write(ad)
+        except:
+            print('Not a condor machine or something went wrong')
+
+    @classmethod
     def last_logdir(cls, path, prefix=None):
         import re
         r = re.compile('^((?P<prefix>.*?)_)?(?P<time_stamp>[0-9]{2}-[0-9]{2}-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2})')

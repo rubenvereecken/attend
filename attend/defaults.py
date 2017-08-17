@@ -15,8 +15,9 @@ class Defaults:
 
         update_rule               = 'adam',
 
-        use_dropout               = True,
+        use_dropout               = False,
         dropout                   = .75,
+        use_maxnorm = False,
 
         shuffle_examples          = True,
         # Defaults to batch_size * 4

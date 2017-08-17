@@ -125,6 +125,7 @@ class Runner:
         Log.save_env()
         Log.save_git_version()
         Log.save_hostname()
+        Log.save_condor()
 
 
     def _gen_log_dir(self, base_dir, prefix=''):
@@ -146,6 +147,10 @@ class Runner:
         except OSError as ex:
             pass # All G
 
-        os.symlink(base_log_dir, link_path)
+        try:
+            os.symlink(base_log_dir, link_path)
+        except FileExistsError as e:
+            # Race conditions, what can you do
+            pass
 
         return log_dir
