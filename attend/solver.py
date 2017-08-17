@@ -155,11 +155,13 @@ class AttendSolver():
             #         var_list=tf.trainable_variables())
             grads = tf.gradients(loss_op, tf.trainable_variables())
             grads_and_vars = list(zip(grads, tf.trainable_variables()))
-            train_op = optimizer.apply_gradients(grads_and_vars=grads_and_vars,
-                    global_step=global_step)
-            # for v in tf.trainable_variables():
-            #     print(v)
-            #     print(v.shape)
+
+            # All updates that aren't part of the graph
+            # Currently just batch norm moving averages
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(update_ops):
+                train_op = optimizer.apply_gradients(grads_and_vars=grads_and_vars,
+                        global_step=global_step)
             num_vars = np.sum(list(map(lambda v: np.prod(v.shape), tf.trainable_variables())))
             log.info('Total trainable vars {}'.format(num_vars))
 

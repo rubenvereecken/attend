@@ -62,6 +62,8 @@ class Runner:
         _boolean_argument('use_dropout', network)
         _boolean_argument('use_maxnorm', network)
         _boolean_argument('learn_initial_states', network)
+        _boolean_argument('use_batch_norm', network)
+        network.add_argument('--batch_norm_decay', type=float)
 
         decoder = parser.add_argument_group('Decoder')
         decoder.add_argument('--attention_impl', type=str)

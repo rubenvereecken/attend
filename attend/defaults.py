@@ -18,6 +18,9 @@ class Defaults:
         use_dropout               = False,
         dropout                   = .75,
         use_maxnorm = False,
+        use_batch_norm = True,
+        # NOTE if training good but validation low, lower decay
+        batch_norm_decay = 0.99,
 
         shuffle_examples          = True,
         # Defaults to batch_size * 4

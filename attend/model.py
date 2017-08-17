@@ -17,6 +17,8 @@ class AttendModel():
                  time_steps=None, attention_impl=None, attention_units=None,
                  dropout=None,
                  use_dropout=True,
+                 use_batch_norm=True,
+                 batch_norm_decay=None,
                  final_activation=None,
                  sampling_scheme=None,
                  sampling_min=.75,  # 75% chance to pick truth
@@ -42,6 +44,8 @@ class AttendModel():
         self.H = num_hidden
         self.dropout = dropout
         self.use_dropout_for_training = use_dropout
+        self.use_batch_norm = use_batch_norm
+        self.batch_norm_decay = batch_norm_decay
 
         if isinstance(final_activation, str):
             self.final_activation = attend.get_activation(final_activation)
@@ -117,7 +121,7 @@ class AttendModel():
             batch_size = tf.shape(features)[0]
             x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
 
-        x = self.encoder(x, provider, use_dropout)
+        x = self.encoder(x, provider, is_training)
 
         # TODO consider projecting features x
 
@@ -223,9 +227,7 @@ class AttendModel():
                     context = x[:, t, :]
 
                 with tf.name_scope(decode_lstm_scope or 'final_decode') as decode_lstm_scope:
-                    output = self._decode(
-                        context, h, dropout=use_dropout, reuse=(
-                            t != 0))
+                    output = self._decode(context, h, is_training, reuse=(t != 0))
                     outputs.append(output)
 
             outputs = tf.stack(outputs, axis=1)  # B x T x 1
@@ -426,7 +428,6 @@ class AttendModel():
 
         return epsilon
 
-
     def _sample_output(self, truth, output, epsilon):
         """
         Scheduled Sampling
@@ -449,12 +450,22 @@ class AttendModel():
 
         return selected
 
-    def _decode(self, x, h, dropout=False, reuse=False):
+    def _decode(self, x, h, is_training, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):
             decode_input = tf.concat([x, h], 1, name='decode_input')
-            out = tf.layers.dense(decode_input, 1, activation=self.final_activation,
+            out = tf.layers.dense(decode_input, 1, activation=None,
                                   kernel_initializer=self.weight_initializer,
                                   name='final_dense')
+
+            if self.use_batch_norm:
+                out = tf.contrib.layers.batch_norm(out, decay=self.batch_norm_decay,
+                                                 center=True, scale=True,
+                                                 is_training=is_training,
+                                                 fused=None)
+
+            if self.final_activation:
+                out = self.final_activation(out)
+
             return out
 
     def _initial_lstm(self, features, reuse=False):

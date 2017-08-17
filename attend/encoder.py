@@ -10,10 +10,15 @@ class Encoder():
 
     def __init__(self, batch_size, encode_hidden_units=0, time_steps=None,
                  debug=True, conv_impl=None, dense_layer=0, dropout=.75,
-                 use_maxnorm=False,
+                 use_dropout=False, use_maxnorm=False,
                  dense_spec=None,
-                 encode_lstm=None
+                 encode_lstm=None,
+                 use_batch_norm=True, batch_norm_decay=None
                  ):
+        self.use_batch_norm = use_batch_norm
+        self.batch_norm_decay = batch_norm_decay
+        self.use_dropout = use_dropout
+
         self.debug = debug
         if encode_lstm is None:
             self.encode_lstm = encode_hidden_units > 0
@@ -45,17 +50,17 @@ class Encoder():
         self.const_initializer  = tf.constant_initializer(0.0)
 
 
-    def __call__(self, x, provider=None, use_dropout=True):
+    def __call__(self, x, provider=None, is_training=True):
         with tf.variable_scope('encoder'):
             x = self.conv_network(x)
             if self.dense_spec:
                 log.debug('Building dense from spec `%s`', self.dense_spec)
-                x = self.dense_from_spec(x, self.dense_spec, use_dropout)
+                x = self.dense_from_spec(x, self.dense_spec, is_training)
             elif self.dense_layer:
                 log.debug('Using a dense layer in the encoder')
-                x = self.dense(x, use_dropout)
+                x = self.dense(x, is_training)
             if self.encode_lstm > 0:
-                x = self._encode_lstm(x, provider, use_dropout)
+                x = self._encode_lstm(x, provider, is_training)
             return x
 
 
@@ -73,10 +78,12 @@ class Encoder():
                 return conv_out.shape.as_list()[2:]
 
 
-    def dense(self, x, use_dropout=True):
+    def dense(self, x, is_training=True):
+        raise Exception('Old code ')
         # Expect flattened
         x.shape.assert_has_rank(3)
         D = x.shape[2]
+        use_dropout = self.use_dropout and is_training
 
         with tf.variable_scope('encode_dense'):
             x = tf.layers.dense(x, D, activation=tf.nn.relu,
@@ -96,7 +103,8 @@ class Encoder():
         return x
 
 
-    def dense_from_spec(self, x, fullspec, use_dropout=True):
+    def dense_from_spec(self, x, fullspec, is_training=True):
+        use_dropout = self.use_dropout and is_training
         specs = fullspec.split(':')
 
         n = 0
@@ -111,6 +119,14 @@ class Encoder():
             x = tf.layers.dense(x, size, activation=activation,
                     kernel_initializer=self.weight_initializer,
                     name='dense_{}'.format(n))
+
+            if self.use_batch_norm:
+                # NOTE gamma can be False if next layer linear or e.g. relu
+                x = tf.contrib.layers.batch_norm(x, decay=self.batch_norm_decay,
+                                                 center=True, scale=True,
+                                                 is_training=is_training,
+                                                 fused=None)
+
             if use_dropout:
                 x = tf.nn.dropout(x, self.dropout, name='dropout_{}'.format(n))
 
@@ -280,7 +296,7 @@ class Encoder():
         return x
 
 
-    def _encode_lstm(self, x, provider=None, use_dropout=True):
+    def _encode_lstm(self, x, provider=None, is_training=True):
         from attend.provider import Provider
 
         with tf.variable_scope('encode_lstm'):

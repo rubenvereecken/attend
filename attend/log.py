@@ -95,6 +95,9 @@ class Log:
         try:
             ad = subprocess.check_output(['condor_status', '$(hostname)', '-l'])
             ad = ad.decode()
+            with open(file_path + '.unsorted', 'w') as f:
+                f.write(ad)
+
             ad_lines = list(filter(lambda x: len(x) > 0, ad.split('\n')))
             ad = '\n'.join(sorted(ad_lines))
             file_path = cls.log_dir + '/{}'.format(file_name)
