@@ -36,8 +36,9 @@ def dict_to_args(d):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Convert frame images to hf5 and preprocess')
+    parser = argparse.ArgumentParser(description='')
     parser.add_argument('--prefix', type=str, default='')
+    parser.add_argument('--prefer', type=str, default='gpu', choices=['gpu', 'cpu'])
     args, rest_args = parser.parse_known_args()
 
     with open(tpl_file, 'r') as f:
@@ -50,7 +51,8 @@ def main():
     pargs['data_file'] = base_path + '/confer-splits/train.tfrecords'
     pargs['val_data'] = base_path + '/confer-splits/val.tfrecords'
     pargs['show_progress_bar'] = False
-    pargs['prefix'] = args.prefix
+    if args.prefix and args.prefix != '':
+        pargs['prefix'] = args.prefix
 
     prefix = args.prefix
     if prefix != '':
@@ -64,11 +66,15 @@ def main():
         PYTHONHOME='/vol/hmi/projects/ruben/miniconda'
     )
 
+    if args.prefer == 'cpu':
+        env['CUDA_VISIBLE_DEVICES'] = ''
+
     tpl_args = dict(
         python='/vol/hmi/projects/ruben/miniconda/bin/python',
         base='/vol/bitbucket/rv1017',
         env=env,
         prefix=prefix,
+        prefer=args.prefer,
         env_string=' '.join('{}={}'.format(k, v) for k, v in env.items()),
         args=dict_to_args(pargs) + ' ' + ' '.join(rest_args)
     )
