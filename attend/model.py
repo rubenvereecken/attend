@@ -5,6 +5,7 @@ from attend.log import Log
 import attend
 from attend import tf_util
 from attend.attention import BahdanauAttention
+from attend.sample import get_sampler
 from functools import partial
 
 log = Log.get_logger(__name__)
@@ -30,10 +31,10 @@ class AttendModel():
             time_steps: For BPTT, or None for dynamic LSTM (unimplemented)
 
         """
+        self.sampler = get_sampler(sampling_scheme)(sampling_min)
 
         self.enc2lstm = enc2lstm
         self.enc2ctx = enc2ctx
-        self._sampling_scheme = sampling_scheme
         self._sampling_min = sampling_min
 
         self.provider = provider
@@ -151,17 +152,24 @@ class AttendModel():
             lstm_scope = None
             decode_lstm_scope = None
             attention_scope = None
+            sample_scope = None
 
-            if is_training:
-                global_step = tf.train.get_global_step()
-                # One epsilon per batch
-                epsilon = self._sample_epsilon(global_step, total_steps)
+            global_step = tf.train.get_global_step()
+            self.sampler.prepare(global_step, total_steps, is_training)
 
             for t in range(T):
                 # y_t-1
-                if is_training and t == 0:
+                if is_training:
+                    with tf.name_scope(sample_scope or 'sample') as sample_scope:
+                        if t != 0:
+                            target = targets[:,t-1]
+
+                        prev_target = self.sampler.sample(target, output, is_training)
+                else:
+                    prev_target = output
+
+                # if is_training and t == 0:
                     # This would be the naive case, learn two input values
-                    prev_target = self._sample_output(target, output, epsilon)
 
                     # NOTE disabled for now because it looks like a lot of
                     # trouble for barely anything in return
@@ -181,12 +189,6 @@ class AttendModel():
                     # prev_target = tf.map_fn(_sample_unless_first,
                     #                         tf.range(batch_size),
                     #                         dtype=tf.float32)
-                elif is_training:
-                    prev_target = self._sample_output(
-                        targets[:, t - 1], output, epsilon)
-                else:
-                    # Feed back in previous prediction
-                    prev_target = output
 
                 with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
                     # Context is just previous encoded when not using attention
@@ -383,72 +385,6 @@ class AttendModel():
                 out['total']['mse_tf'] = tfmse
 
             return out
-
-    def _sample_epsilon(self, time_step, decay_steps):
-        """
-        Scheduled Sampling
-
-        Generate an epsilon for each time step, to be used later by the sampler
-        """
-
-        def _inverse_sigmoid_np(k, p_min, x):
-            return p_min + k / (k + np.exp(x/k)) / (1. / (1-p_min))
-
-        def _inverse_sigmoid_tf(k, p_min, x):
-            return p_min + k / (k + tf.exp(x/k)) / (1. / (1-p_min))
-
-        def _solve_for_k(p_min, decay_steps):
-            # Solve for parameter k such that the inverse sigmoid gently curves
-            # from 1 to p_min with the half-way point exactly halfway the decay
-            from scipy.optimize import fsolve
-            M = p_min + (1 - p_min) / 2
-            X = decay_steps / 2
-            x0 = X / np.log(X)
-            inverse_sigmoid_instance = partial(_inverse_sigmoid_np, p_min=p_min, x=X)
-            k = fsolve(lambda k: inverse_sigmoid_instance(k) - M, x0)[0]
-            return k
-
-        def _linear_tf(p_min, decay_steps, x):
-            b = 1 # Offset 1, starting point
-            a = (p_min - b) / decay_steps
-            o = a * x + b
-            return tf.maximum(p_min, o)
-
-
-        if self._sampling_scheme == 'linear':
-            epsilon = _linear_tf(self._sampling_min, decay_steps, time_step)
-        elif self._sampling_scheme == 'inverse_sigmoid':
-            k = _solve_for_k(self._sampling_min, decay_steps)
-            epsilon = _inverse_sigmoid_tf(k, self._sampling_min, time_step)
-        else:
-            raise ValueError('Unknown scheduled sampling scheme')
-
-        epsilon = tf.cast(epsilon, tf.float32)
-        tf.summary.scalar('sampling_epsilon', epsilon, family='train')
-
-        return epsilon
-
-    def _sample_output(self, truth, output, epsilon):
-        """
-        Scheduled Sampling
-
-        Pick `truth`, with chance epsilon or the previously generated output
-        with chance 1 - epsilon
-        Epsilon is calculated by _sample_epsilons
-
-        Each batch element gets sampled separately but only one epsilon
-        """
-        B = tf.shape(truth)[0]
-        randoms = tf.random_uniform([B])
-
-        def _sample(i):
-            return tf.cond(epsilon > randoms[i],
-                       true_fn=lambda: truth[i],
-                       false_fn=lambda: output[i])
-
-        selected = tf.map_fn(_sample, tf.range(B), dtype=tf.float32)
-
-        return selected
 
     def _decode(self, x, h, is_training, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):

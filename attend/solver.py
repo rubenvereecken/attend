@@ -174,8 +174,8 @@ class AttendSolver():
         tf.summary.scalar('batch_loss', loss_op, family='train')
         # for var in tf.trainable_variables():
         #     tf.summary.histogram(var.op.name, var)
-        for grad, var in grads_and_vars:
-            tf.summary.histogram(var.op.name+'/gradient', grad)
+        # for grad, var in grads_and_vars:
+        #     tf.summary.histogram(var.op.name+'/gradient', grad)
 
         # The Supervisor already merges all summaries but I like explicit
         summary_op = tf.summary.merge_all()
@@ -227,7 +227,10 @@ class AttendSolver():
                     try:
                         # Run batch_loss summary op together with loss_op
                         # Otherwise it will recompute the loss separately
-                        loss, _, summary, keys = sess.run([loss_op, train_op, summary_op, ctx['key']])
+                        loss, _, summary, keys = sess.run([loss_op, train_op,
+                                                           summary_op, ctx['key']])
+                        # np.savez('{}/output.{:05d}'.format(log_dir, global_step_value),
+                        #          output=outputs_arr,target=targets_arr)
                         losses[step_i % self.stats_every] = loss # Circular buffer
                         # keys = list(map(lambda x: x.decode(), keys))
                     # If duplicate key is encountered this could happen rarely
