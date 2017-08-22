@@ -97,8 +97,10 @@ class AttendModel():
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
 
-        if is_training:
-            assert not total_steps is None, "Need total steps for scheduled sampling"
+        if is_training and total_steps is None:
+            log.warning('total_steps=None but is_training=True')
+            log.warning(' -- should only be the case when using FixedScheduler')
+            # assert not total_steps is None, "Need total steps for scheduled sampling"
 
         assert targets is None or targets.shape.ndims == 3, \
             'The target is assumed to be B x T x 1'
@@ -155,18 +157,18 @@ class AttendModel():
             attention_scope = None
             sample_scope = None
 
+            # TODO refactor total_steps to elsewhere without breaking my
+            # previous paradigms. Would make the log.warning above unneeded
             self.sampler.prepare(total_steps, is_training)
 
             for t in range(T):
                 # y_t-1
-                if is_training:
-                    with tf.name_scope(sample_scope or 'sample') as sample_scope:
-                        if t != 0:
-                            target = targets[:,t-1]
+                with tf.name_scope(sample_scope or 'sample') as sample_scope:
+                    if t != 0:
+                        target = targets[:,t-1]
 
-                        prev_target = self.sampler.sample(target, output, is_training)
-                else:
-                    prev_target = output
+                    # Always last output if not is_training
+                    prev_target = self.sampler.sample(target, output, is_training)
 
                 # if is_training and t == 0:
                     # This would be the naive case, learn two input values
