@@ -220,10 +220,11 @@ class ImportEvaluator(Evaluator):
 
 
 class RebuildEvaluator(Evaluator):
-    def __init__(self, encoder, provider, model, log_dir, args=None, scope=None):
+    def __init__(self, encoder, provider, model, log_dir, args=None, scope=None, is_training=False):
         self.encoder = encoder
         self.provider = provider
         self.model = model
+        self.is_training = is_training
 
         super().__init__(log_dir, args, scope)
 
@@ -234,7 +235,8 @@ class RebuildEvaluator(Evaluator):
                 self.provider.batch_sequences_with_states()
                 # State saver gets created during batching
                 self.state_saver = self.provider.state_saver
-                out_ops, ctx_ops = self.model.build_model(self.provider, False)
+                out_ops, ctx_ops = self.model.build_model(self.provider,
+                                                          is_training)
         return out_ops, ctx_ops
 
 
@@ -250,7 +252,8 @@ class RebuildEvaluator(Evaluator):
 
 
     @classmethod
-    def rebuild_from_logs(cls, log_dir, extra_args={}, feat_dim=(272,)):
+    def rebuild_from_logs(cls, log_dir, extra_args={},
+                          feat_dim=(272,), is_training=False):
         """
         Rebuilds the model from logs based on the saved cli arguments
         and saved network weights.
@@ -261,13 +264,22 @@ class RebuildEvaluator(Evaluator):
         args = Evaluator.get_args(log_dir)
         args.update(extra_args)
 
+        if is_training and args['sampling_scheme'] not in ['standard', None] \
+                and args.get('sampler_kwargs', {}).get('epsilon', None) is None:
+            raise ValueError('When imitating training, supply epsilon in `sampler_kwargs`')
+
+        if is_training and args['sampling_scheme'] not in ['standard', None]:
+            args['sampling_scheme'] = 'fixed_epsilon'
+            tf.logging.info('Changed sampling scheme to fixed_epsilon')
+
         encoder = util.init_with(Encoder, args)
         provider = InMemoryProvider(encoder=encoder, dim_feature=feat_dim,
                 **util.pick(args, util.params_for(Provider.__init__)))
         model = AttendModel(provider, encoder,
                 **util.pick(args, util.params_for(AttendModel.__init__)))
 
-        evaluator = cls(encoder, provider, model, log_dir, args)
+        evaluator = cls(encoder, provider, model, log_dir, args,
+                        is_training=is_training)
         evaluator.initialize()
 
         return evaluator

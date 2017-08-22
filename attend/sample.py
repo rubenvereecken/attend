@@ -25,9 +25,11 @@ class ScheduledSampler(Sampler):
     def __init__(self, sampling_min):
         self._sampling_min = sampling_min
 
-    def prepare(self, step, decay_steps, is_training):
+    def prepare(self, decay_steps, is_training):
         if not is_training:
             return
+
+        step = tf.train.get_global_step()
 
         with tf.name_scope('epsilon'):
             epsilon = self.calculate_epsilon(step, decay_steps)
@@ -57,6 +59,20 @@ class ScheduledSampler(Sampler):
                              name='sample_over_batch')
 
         return selected
+
+
+class FixedEpsilonSampler(ScheduledSampler):
+    """
+    Used for imitating scheduled sampler at a specific point,
+    useful for debugging training/inference
+    """
+
+    def __init__(self, *args, epsilon):
+        super().__init__(*args)
+        self.epsilon = epsilon
+
+    def _epsilon_scheme(self, *args):
+        return self.epsilon
 
 
 class LinearScheduledSampler(ScheduledSampler):
@@ -105,7 +121,9 @@ samplers = dict(
     none=StandardSampler,
     standard=StandardSampler,
     linear=LinearScheduledSampler,
-    inverse_sigmoid=InverseSigmoidScheduledSampler
+    inverse_sigmoid=InverseSigmoidScheduledSampler,
+    fixed=FixedEpsilonSampler,
+    fixed_epsilon=FixedEpsilonSampler
 )
 samplers[None] = samplers['none']
 

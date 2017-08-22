@@ -23,6 +23,7 @@ class AttendModel():
                  final_activation=None,
                  sampling_scheme=None,
                  sampling_min=.75,  # 75% chance to pick truth
+                 sampler_kwargs={}, # Just for FixedEpsilonSampler
                  # Variations to try
                  enc2lstm=False, enc2ctx=False,
                  debug=True):
@@ -31,7 +32,7 @@ class AttendModel():
             time_steps: For BPTT, or None for dynamic LSTM (unimplemented)
 
         """
-        self.sampler = get_sampler(sampling_scheme)(sampling_min)
+        self.sampler = get_sampler(sampling_scheme)(sampling_min, **sampler_kwargs)
 
         self.enc2lstm = enc2lstm
         self.enc2ctx = enc2ctx
@@ -85,23 +86,25 @@ class AttendModel():
 
         self.debug = debug
 
-    def build_model(self, provider, is_training=True, total_steps=None):
+    def build_model(self, provider, is_training, total_steps=None):
         """Build the entire model
 
         Args:
-            features: Feature batch Tensor (from provider)
-            targets: Targets batch Tensor
+            provider: Provider, has `features` and `targets`
+            is_training: bool
+            total_steps: For annealing shemes
         """
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
 
         if is_training:
-            assert total_steps is not None, "Need total steps for scheduled sampling"
+            assert not total_steps is None, "Need total steps for scheduled sampling"
 
         assert targets is None or targets.shape.ndims == 3, \
             'The target is assumed to be B x T x 1'
 
         use_dropout = is_training and self.use_dropout_for_training
+
         if is_training:
             log.debug('=== TRAINING ===')
         else:
@@ -152,8 +155,7 @@ class AttendModel():
             attention_scope = None
             sample_scope = None
 
-            global_step = tf.train.get_global_step()
-            self.sampler.prepare(global_step, total_steps, is_training)
+            self.sampler.prepare(total_steps, is_training)
 
             for t in range(T):
                 # y_t-1
