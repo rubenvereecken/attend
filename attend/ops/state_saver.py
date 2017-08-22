@@ -69,8 +69,8 @@ class ManualStateSaver:
                 with tf.name_scope(k):
                     v = ops.repeat(v, n)
                     deps.append(self.save_state(k, v))
-            with tf.control_dependencies(deps):
-                return tf.identity(self._key)
+
+            return tf.group(*deps, name='reset_group')
 
     @property
     def context(self):

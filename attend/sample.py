@@ -29,8 +29,9 @@ class ScheduledSampler(Sampler):
         if not is_training:
             return
 
-        epsilon = self.calculate_epsilon(step, decay_steps)
-        epsilon = tf.cast(epsilon, tf.float32)
+        with tf.name_scope('epsilon'):
+            epsilon = self.calculate_epsilon(step, decay_steps)
+            epsilon = tf.cast(epsilon, tf.float32)
         tf.summary.scalar('sampling_epsilon', epsilon, family='train')
         self.epsilon = epsilon
 
@@ -42,16 +43,18 @@ class ScheduledSampler(Sampler):
         if not is_training:
             return output
 
-        B = tf.shape(truth)[0]
+        B = tf.gather(tf.shape(truth), 0, name='batch_size')
         randoms = tf.random_uniform([B])
         epsilon = self.epsilon
 
         def _sample(i):
             return tf.cond(epsilon > randoms[i],
                        true_fn=lambda: truth[i],
-                       false_fn=lambda: output[i])
+                       false_fn=lambda: output[i],
+                           name='truth_if_eps_gt_random')
 
-        selected = tf.map_fn(_sample, tf.range(B), dtype=tf.float32)
+        selected = tf.map_fn(_sample, tf.range(B), dtype=tf.float32,
+                             name='sample_over_batch')
 
         return selected
 
@@ -64,10 +67,11 @@ class LinearScheduledSampler(ScheduledSampler):
         return self._linear_tf(self._sampling_min, decay_steps, time_step)
 
     def _linear_tf(self, p_min, decay_steps, x):
-        b = 1. # Offset 1, starting point
-        a = (p_min - b) / decay_steps
-        o = a * tf.cast(x, tf.float32) + b
-        return tf.maximum(p_min, o)
+        with tf.name_scope('linear_eps'):
+            b = 1. # Offset 1, starting point
+            a = (p_min - b) / decay_steps
+            o = a * tf.cast(x, tf.float32) + b
+            return tf.maximum(p_min, o)
 
 
 class InverseSigmoidScheduledSampler(ScheduledSampler):
@@ -82,7 +86,8 @@ class InverseSigmoidScheduledSampler(ScheduledSampler):
         return p_min + k / (k + np.exp(x/k)) / (1. / (1-p_min))
 
     def _inverse_sigmoid_tf(self, k, p_min, x):
-        return p_min + k / (k + tf.exp(x/k)) / (1. / (1-p_min))
+        with tf.name_scope('inverse_sigmoid_eps'):
+            return p_min + k / (k + tf.exp(x/k)) / (1. / (1-p_min))
 
     def _solve_for_k(self, p_min, decay_steps):
         # Solve for parameter k such that the inverse sigmoid gently curves

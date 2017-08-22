@@ -157,22 +157,25 @@ class Provider():
 
     def _overwrite_initial(self, initial_variables):
         first = self.state_saver.state('first')
-        only_first_mask = tf.expand_dims(first, 1)
-        not_first_mask = tf.logical_not(only_first_mask)
-        only_first_mask = tf.cast(only_first_mask, tf.float32)
-        not_first_mask = tf.cast(not_first_mask, tf.float32)
-        batch_size = tf.shape(first)[0]
+        with tf.name_scope('prepare_overwriting'):
+            only_first_mask = tf.expand_dims(first, 1)
+            not_first_mask = tf.logical_not(only_first_mask)
+            only_first_mask = tf.cast(only_first_mask, tf.float32, name='only_first_mask')
+            not_first_mask = tf.cast(not_first_mask, tf.float32, name='not_first_mask')
+            batch_size = tf.gather(tf.shape(first), 0, name='batch_size')
 
         vs = {}
 
         for k, init_v in initial_variables.items():
             v = self.state_saver.state(k)
-            # B x 1 * 1 x 512 -> B x 512 (repeats row)
-            init_v = tf.einsum('ij,jk->ik', tf.ones([batch_size, 1]), tf.expand_dims(init_v, 0))
-            init_v = only_first_mask * init_v
-            v = not_first_mask * v
-            v = v + init_v
-            vs[k] = v
+            with tf.name_scope('assign_first_{}'.format(k)):
+                # B x 1 * 1 x 512 -> B x 512 (repeats row)
+                init_v = tf.einsum('ij,jk->ik', tf.ones([batch_size, 1]),
+                                   tf.expand_dims(init_v, 0))
+                init_v = only_first_mask * init_v
+                v = not_first_mask * v
+                v = v + init_v
+                vs[k] = v
 
         self.states = vs
 

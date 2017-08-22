@@ -103,7 +103,7 @@ class Encoder():
         return x
 
 
-    def dense_from_spec(self, x, fullspec, is_training=True):
+    def dense_from_spec(self, x, fullspec, is_training=False):
         use_dropout = self.use_dropout and is_training
         specs = fullspec.split(':')
 

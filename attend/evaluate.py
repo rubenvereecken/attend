@@ -72,6 +72,10 @@ class Evaluator:
         return init_op
 
 
+    def reset(self, keys):
+        self.sess.run(self.reset_op, { self.state_saver._key: keys })
+
+
     @property
     def variables(self):
         return self.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope)
@@ -145,7 +149,7 @@ class Evaluator:
 
         # Reset saved states for this sequence
         keys = list(set(keys))
-        self.sess.run(self.reset_op, { state_saver._key: keys })
+        self.reset(keys)
 
         total = { k: np.concatenate(v) for k, v in total.items() }
 
@@ -246,7 +250,7 @@ class RebuildEvaluator(Evaluator):
 
 
     @classmethod
-    def rebuild_from_logs(cls, log_dir, feat_dim=(272,)):
+    def rebuild_from_logs(cls, log_dir, extra_args={}, feat_dim=(272,)):
         """
         Rebuilds the model from logs based on the saved cli arguments
         and saved network weights.
@@ -255,6 +259,7 @@ class RebuildEvaluator(Evaluator):
         if not os.path.isdir(log_dir):
             raise Exception('Log dir does not exist')
         args = Evaluator.get_args(log_dir)
+        args.update(extra_args)
 
         encoder = util.init_with(Encoder, args)
         provider = InMemoryProvider(encoder=encoder, dim_feature=feat_dim,
