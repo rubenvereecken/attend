@@ -31,8 +31,8 @@ class Encoder():
 
         if conv_impl is None and debug:
             self.conv_impl = 'small'
-        elif conv_impl is None:
-            self.conv_impl = 'convnet'
+        elif conv_impl in ['none', None]:
+            self.conv_impl = None
         else:
             self.conv_impl = conv_impl
 
@@ -155,7 +155,7 @@ class Encoder():
             x = self._build_resnet(x)
         elif self.conv_impl == 'vggface':
             x = self._build_vggface(x)
-        elif self.conv_impl == 'none':
+        elif self.conv_impl in ['none', None]:
             D_feat = x.shape[2:].as_list()
             D_feat = np.prod(D_feat)
             # Just flatten the features if no convolutional network defined

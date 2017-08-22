@@ -124,8 +124,6 @@ class AttendModel():
 
         x = self.encoder(x, provider, is_training)
 
-        # TODO consider projecting features x
-
         if state_saver is not None:
             c = provider.state('lstm_c')
             h = provider.state('lstm_h')
@@ -225,6 +223,10 @@ class AttendModel():
                                 1, name='enc2ctx')
                         else:
                             context = attention
+
+                        # TODO checkout where to best put dropout with attention
+                        if use_dropout:
+                            context = tf.nn.dropout(context, self.dropout)
                 else:
                     context = x[:, t, :]
 
