@@ -13,10 +13,12 @@ class Encoder():
                  use_dropout=False, use_maxnorm=False,
                  dense_spec=None,
                  encode_lstm=None,
-                 use_batch_norm=True, batch_norm_decay=None
+                 use_batch_norm=True, batch_norm_decay=None, use_batch_renorm=False
                  ):
         self.use_batch_norm = use_batch_norm
         self.batch_norm_decay = batch_norm_decay
+        self.use_batch_renorm = use_batch_renorm
+
         self.use_dropout = use_dropout
 
         self.debug = debug
@@ -125,7 +127,7 @@ class Encoder():
                 x = tf.contrib.layers.batch_norm(x, decay=self.batch_norm_decay,
                                                  center=True, scale=True,
                                                  is_training=is_training,
-                                                 fused=None)
+                                                 renorm=self.use_batch_renorm)
 
             if use_dropout:
                 x = tf.nn.dropout(x, self.dropout, name='dropout_{}'.format(n))

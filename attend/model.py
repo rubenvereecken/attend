@@ -20,6 +20,7 @@ class AttendModel():
                  use_dropout=True,
                  use_batch_norm=True,
                  batch_norm_decay=None,
+                 use_batch_renorm=False,
                  final_activation=None,
                  sampling_scheme=None,
                  sampling_min=.75,  # 75% chance to pick truth
@@ -48,6 +49,7 @@ class AttendModel():
         self.use_dropout_for_training = use_dropout
         self.use_batch_norm = use_batch_norm
         self.batch_norm_decay = batch_norm_decay
+        self.use_batch_renorm = use_batch_renorm
 
         if isinstance(final_activation, str):
             self.final_activation = attend.get_activation(final_activation)
@@ -400,10 +402,12 @@ class AttendModel():
                                   name='final_dense')
 
             if self.use_batch_norm:
+                # TODO renorm_clipping: {'rmax', 'rmin', 'dmax'}
+                # In the original paper they anneal those values
                 out = tf.contrib.layers.batch_norm(out, decay=self.batch_norm_decay,
-                                                 center=True, scale=True,
-                                                 is_training=is_training,
-                                                 fused=None)
+                                                   center=True, scale=True,
+                                                   is_training=is_training,
+                                                   renorm=self.use_batch_renorm)
 
             if self.final_activation:
                 out = self.final_activation(out)
