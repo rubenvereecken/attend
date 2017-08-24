@@ -37,8 +37,9 @@ class Defaults:
         final_activation = 'tanh',
 
         # Scheduled sampling
-        sampling_scheme = 'inverse_sigmoid',
-        sampling_min = .75
+        sampling_scheme      = 'inverse_sigmoid',
+        sampling_decay_steps = None, # Defaults to total steps
+        sampling_min         = .75
     )
 
     debug_params = dict(

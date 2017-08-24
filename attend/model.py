@@ -24,6 +24,7 @@ class AttendModel():
                  final_activation=None,
                  sampling_scheme=None,
                  sampling_min=.75,  # 75% chance to pick truth
+                 sampling_decay_steps=None,
                  sampler_kwargs={}, # Just for FixedEpsilonSampler
                  # Variations to try
                  enc2lstm=False, enc2ctx=False,
@@ -34,6 +35,7 @@ class AttendModel():
 
         """
         self.sampler = get_sampler(sampling_scheme)(sampling_min, **sampler_kwargs)
+        self.sampling_decay_steps = sampling_decay_steps
 
         self.enc2lstm = enc2lstm
         self.enc2ctx = enc2ctx
@@ -98,6 +100,10 @@ class AttendModel():
         """
         features, targets = provider.features, provider.targets
         state_saver = provider.state_saver
+
+        if not self.sampling_decay_steps is None:
+            log.debug('Using sampling decay steps from configuration')
+            total_steps = self.sampling_decay_steps
 
         if is_training and total_steps is None:
             log.warning('total_steps=None but is_training=True')

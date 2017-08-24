@@ -92,7 +92,7 @@ class Evaluator:
         return args
 
 
-    def evaluate(self, sequence, targets=None, key='input_seq'):
+    def evaluate(self, sequence, targets=None, key='input_seq', feed_dict={}):
         """
         In memory evaluation
         """
@@ -120,7 +120,7 @@ class Evaluator:
             batch_l = batch.shape[0]
             batch = util.pad(batch, T-batch_l)
 
-            feed_dict = { state_saver._sequences['images']: [batch],
+            state_dict = { state_saver._sequences['images']: [batch],
                         state_saver._full_key: ['{:05d}_of_{:05d}:{}'.format(i,
                             n_batches, key)],
                         state_saver._key: [key],
@@ -128,6 +128,8 @@ class Evaluator:
                         state_saver._sequence: [i],
                         state_saver._sequence_count: [n_batches],
                         }
+            feed_dict = feed_dict.copy()
+            feed_dict.update(state_dict)
 
             ctx_ops = self.ctx_ops.copy()
 
@@ -236,7 +238,7 @@ class RebuildEvaluator(Evaluator):
                 # State saver gets created during batching
                 self.state_saver = self.provider.state_saver
                 out_ops, ctx_ops = self.model.build_model(self.provider,
-                                                          is_training)
+                                                          self.is_training)
         return out_ops, ctx_ops
 
 
@@ -249,6 +251,27 @@ class RebuildEvaluator(Evaluator):
         with self.graph.as_default():
             reset_op = self.provider.state_saver.reset_states()
             return reset_op
+
+
+    def evaluate(self, sequence, targets=None, key=None, feed_dict={},
+                 epsilon=None):
+        """
+        Arguments:
+            epsilon: to be added to feed_dict; convenience argument
+        """
+        if self.is_training and targets is None:
+            raise ValueError('Targets should be provided in training mode (for the sampler)')
+
+        feed_dict = feed_dict.copy()
+
+        if not epsilon is None:
+            epsilon_tensor = tf_util.get_collection_as_singleton(
+                attend.GraphKeys.SAMPLING_EPSILON, self.graph
+            )
+
+            feed_dict.update({ epsilon_tensor: epsilon })
+
+        return super().evaluate(sequence, targets, key, feed_dict=feed_dict)
 
 
     @classmethod
@@ -266,7 +289,10 @@ class RebuildEvaluator(Evaluator):
 
         if is_training and args['sampling_scheme'] not in ['standard', None] \
                 and args.get('sampler_kwargs', {}).get('epsilon', None) is None:
-            raise ValueError('When imitating training, supply epsilon in `sampler_kwargs`')
+            sampler_kwargs = args.get('sampler_kwargs', {})
+            sampler_kwargs['epsilon'] = 0
+            args['sampler_kwargs'] = sampler_kwargs
+            tf.logging.warn('Falling back to sampling epsilon 0, can still be overridden with feed_dict')
 
         if is_training and args['sampling_scheme'] not in ['standard', None]:
             args['sampling_scheme'] = 'fixed_epsilon'

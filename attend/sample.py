@@ -3,6 +3,10 @@ import numpy as np
 
 from functools import partial
 
+import attend
+from attend import tf_util
+
+
 class Sampler:
     pass
 
@@ -36,6 +40,7 @@ class ScheduledSampler(Sampler):
             epsilon = tf.cast(epsilon, tf.float32)
         tf.summary.scalar('sampling_epsilon', epsilon, family='train')
         self.epsilon = epsilon
+        tf_util.add_to_collection(attend.GraphKeys.SAMPLING_EPSILON, epsilon)
 
     def calculate_epsilon(self, step, decay_steps):
         epsilon = self._epsilon_scheme(step, decay_steps)

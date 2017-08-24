@@ -14,6 +14,7 @@ class GraphKeys:
     INTERNAL = 'internal'
     ERRORS = 'errors'
     CONTEXT = 'context'
+    SAMPLING_EPSILON = 'epsilon'
 
 
 from .report import SummaryProducer

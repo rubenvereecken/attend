@@ -63,6 +63,7 @@ class Runner:
         _boolean_argument('use_maxnorm', network)
         _boolean_argument('learn_initial_states', network)
         _boolean_argument('use_batch_norm', network)
+        _boolean_argument('use_batch_renorm', network)
         network.add_argument('--batch_norm_decay', type=float)
 
         decoder = parser.add_argument_group('Decoder')
@@ -72,6 +73,7 @@ class Runner:
         decoder.add_argument('--final_activation', type=str)
         decoder.add_argument('--sampling_scheme', type=str)
         decoder.add_argument('--sampling_min', type=float)
+        decoder.add_argument('--sampling_decay_steps', type=int)
 
         registered_params = [action.dest for action in parser._optionals._group_actions[1:]]
 

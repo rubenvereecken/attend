@@ -23,3 +23,7 @@ def get_collection_as_dict(key, graph=None):
     collection = graph.get_collection(key)
     collection = { name(v): v for v in collection }
     return collection
+
+def get_collection_as_singleton(key, graph=None):
+    return list(get_collection_as_dict(key, graph).values())[0]
+
