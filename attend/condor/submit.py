@@ -67,7 +67,7 @@ def main():
     )
 
     if args.prefer == 'cpu':
-        env['CUDA_VISIBLE_DEVICES'] = ''
+        env['CUDA_VISIBLE_DEVICES'] = "'-1'"
 
     tpl_args = dict(
         python='/vol/hmi/projects/ruben/miniconda/bin/python',

@@ -5,13 +5,14 @@ Arguments = -m attend.train {{ args }}
 
 {% if prefer == 'gpu' -%}
 # Preference set to GPU
-Requirements = Memory >= 2500 && CUDACapability >= 3.5
+Requirements = Memory >= 4000 && CUDACapability >= 3.5
 # Rank = CUDACapability
 Rank = CUDAGlobalMemoryMb
 {%- else -%}
 # Preference set to CPU
-Requirements = Memory
+Requirements = Memory >= 4000
 Rank = Mips
+request_gpus = 0
 {%- endif %}
 
 Error = condor_logs/{{ prefix }}$(cluster).err
