@@ -123,7 +123,7 @@ class AttendSolver():
                 # tf.get_variable_scope().reuse_variables()
                 val_out, val_ctx = self.model.build_model(val_provider, False)
                 val_outputs = val_out['output']
-                val_losses = self.model.calculate_losses(val_outputs,
+                val_losses, _ = self.model.calculate_losses(val_outputs,
                         val_provider.targets, val_ctx['key'], val_ctx['length'], 'val_loss')
                 # g.add_to_collection('val_outputs', val_outputs)
                 # for v in val_ctx.values():

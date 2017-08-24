@@ -23,7 +23,7 @@ class Evaluator:
 
     def initialize(self):
         self.out_ops, self.ctx_ops = self._build_model()
-        self.loss_ops = self._build_losses()
+        self.loss_ops, self.loss_reset_op = self._build_losses()
         self.reset_op = self._build_reset()
 
         self._initialize_variables()
@@ -50,11 +50,10 @@ class Evaluator:
 
     def _build_losses(self):
         with self.graph.as_default():
-            # with tf.variable_scope(self.scope):
-            loss_ops = self.model.calculate_losses(self.out_ops['output'],
+            loss_ops, loss_reset = self.model.calculate_losses(self.out_ops['output'],
                     self.state_saver._sequences['conflict'],
                     self.ctx_ops['key'], self.ctx_ops['length'], 'losses')
-        return loss_ops
+        return loss_ops, loss_reset
 
 
     def write_graph(self, log_dir):
@@ -73,7 +72,18 @@ class Evaluator:
 
 
     def reset(self, keys):
-        self.sess.run(self.reset_op, { self.state_saver._key: keys })
+        """
+        Reset state variables and streaming metrics
+        """
+        self.sess.run([self.reset_op, self.loss_reset_op], { self.state_saver._key: keys })
+
+
+    def run(self, *args, **kwargs):
+        return self.sess.run(*args, **kwargs)
+
+
+    def get_collection_as_dict(self, key):
+        return tf_util.get_collection_as_dict(key, self.graph)
 
 
     @property

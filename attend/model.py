@@ -385,6 +385,9 @@ class AttendModel():
             tfmse, tfmse_update = tf.contrib.metrics.streaming_mean_squared_error(
                 predictions, targets, mask)
 
+            streaming_vars = tf.contrib.framework.get_local_variables(tf.get_variable_scope())
+            streaming_reset = tf.variables_initializer(streaming_vars)
+
             error_updates = tf.group(corr_update, tfmse_update)
 
             with tf.control_dependencies([length_update, error_updates]):
@@ -398,7 +401,7 @@ class AttendModel():
                 out['total']['pearson_r'] = corr
                 out['total']['mse_tf'] = tfmse
 
-            return out
+            return out, streaming_reset
 
     def _decode(self, x, h, is_training, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):
