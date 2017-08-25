@@ -39,6 +39,8 @@ def main():
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--prefix', type=str, default='')
     parser.add_argument('--prefer', type=str, default='gpu', choices=['gpu', 'cpu'])
+    parser.add_argument('-N', '--num_jobs', type=int, default=1, help='# of jobs')
+    parser.add_argument('--max_retries', type=int, default=2)
     args, rest_args = parser.parse_known_args()
 
     with open(tpl_file, 'r') as f:
@@ -58,25 +60,32 @@ def main():
     if prefix != '':
         prefix = prefix + '_'
 
+    conda_envs = dict(gpu='tf-gpu', cpu='tf-cpu')
+
     CUDA_ROOT = '/vol/cuda/8.0.61'
+    conda_root = '/vol/hmi/projects/ruben/miniconda'
+    conda_env = conda_envs[args.prefer]
+    env_base = '{}/envs/{}'.format(conda_root, conda_env)
 
     env = dict(
         # LD_LIBRARY_PATH='/vol/hmi/projects/ruben/miniconda/lib',
-        LD_LIBRARY_PATH='/vol/hmi/projects/ruben/miniconda/lib:$ENV(CUDA_ROOT)/lib:$ENV(LD_LIBRARY_PATH)',
-        PYTHONHOME='/vol/hmi/projects/ruben/miniconda'
+        LD_LIBRARY_PATH='{}/lib:$ENV(CUDA_ROOT)/lib:$ENV(LD_LIBRARY_PATH)'.format(env_base),
+        PYTHONHOME=env_base
     )
 
     if args.prefer == 'cpu':
-        env['CUDA_VISIBLE_DEVICES'] = "'-1'"
+        env['CUDA_VISIBLE_DEVICES'] = "-1"
 
     tpl_args = dict(
-        python='/vol/hmi/projects/ruben/miniconda/bin/python',
+        python='{}/bin/python'.format(env_base),
         base='/vol/bitbucket/rv1017',
         env=env,
         prefix=prefix,
         prefer=args.prefer,
         env_string=' '.join('{}={}'.format(k, v) for k, v in env.items()),
-        args=dict_to_args(pargs) + ' ' + ' '.join(rest_args)
+        args=dict_to_args(pargs) + ' ' + ' '.join(rest_args),
+        N=args.num_jobs,
+        max_retries=args.max_retries
     )
 
     job_desc = tpl.render(**tpl_args)
