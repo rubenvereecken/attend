@@ -71,7 +71,7 @@ def process_vids(
             bbox = face.resize(img_cropped)
         except Exception as e:
             print('Failed img {}'.format(frame_file))
-            print(e)
+            raise e
             # raise e
             bbox = np.zeros((224,224,3))
         return bbox

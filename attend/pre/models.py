@@ -18,7 +18,8 @@ def vggface(pooling=None):
     from keras_vggface.vggface import VGGFace
 
     model = VGGFace(include_top=False,
-                    pooling=pooling)
+                    pooling=pooling,
+                    input_shape=(224,224,3))
 
     return model
 
