@@ -40,7 +40,9 @@ def main():
     parser.add_argument('--prefix', type=str, default='')
     parser.add_argument('--prefer', type=str, default='gpu', choices=['gpu', 'cpu'])
     parser.add_argument('-N', '--num_jobs', type=int, default=1, help='# of jobs')
-    parser.add_argument('--max_retries', type=int, default=2)
+    parser.add_argument('--max_retries', type=int, default=3)
+    parser.add_argument('--dataset', type=str, choices=['confer-pts', 'confer-vggface-max'],
+                        default='confer-pts')
     args, rest_args = parser.parse_known_args()
 
     with open(tpl_file, 'r') as f:
@@ -50,8 +52,8 @@ def main():
 
     pargs = sane_args.copy()
     pargs['log_dir'] = base_path + '/log'
-    pargs['data_file'] = base_path + '/confer-splits/train.tfrecords'
-    pargs['val_data'] = base_path + '/confer-splits/val.tfrecords'
+    pargs['data_file'] = base_path + '/data/{}/train.tfrecords'.format(args.dataset)
+    pargs['val_data'] = base_path + '/data/{}/val.tfrecords'.format(args.dataset)
     pargs['show_progress_bar'] = False
     if args.prefix and args.prefix != '':
         pargs['prefix'] = args.prefix

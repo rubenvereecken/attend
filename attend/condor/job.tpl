@@ -34,7 +34,11 @@ initialdir = {{ base }}
 should_transfer_files = YES
 # TODO all the time plis
 when_to_transfer_output = ON_EXIT
+
+next_job_start_delay = 1
 max_retries = $(max_retries)
+# Restart the job when exit code wasn't 0 and it wasn't killed
+on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
 
 getenv = True
 
