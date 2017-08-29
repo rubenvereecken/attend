@@ -19,7 +19,7 @@ class Defaults:
         dropout                   = .75,
         use_maxnorm = False,
 
-        use_batch_norm = True,
+        use_batch_norm = False,
         # NOTE if training good but validation low, lower decay
         batch_norm_decay = 0.9, # Default 0.99
         use_batch_renorm = False,
@@ -34,12 +34,12 @@ class Defaults:
 
         attention_units           = 512,
         learn_initial_states      = True,
-        final_activation = 'tanh',
+        final_activation = 'none',
 
         # Scheduled sampling
-        sampling_scheme      = 'inverse_sigmoid',
-        sampling_decay_steps = None, # Defaults to total steps
-        sampling_min         = .75
+        sampling_scheme      = 'linear',
+        sampling_decay_steps = 25000, # Defaults to total steps if None
+        sampling_min         = .0
     )
 
     debug_params = dict(

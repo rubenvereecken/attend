@@ -65,10 +65,13 @@ class Runner:
         _boolean_argument('use_batch_norm', network)
         _boolean_argument('use_batch_renorm', network)
         network.add_argument('--batch_norm_decay', type=float)
+        network.add_argument('-L', '--num_image_patches', type=int)
 
         decoder = parser.add_argument_group('Decoder')
         decoder.add_argument('--attention_impl', type=str)
         decoder.add_argument('--attention_units', type=int)
+        decoder.add_argument('--attention_input', type=str)
+        decoder.add_argument('--attention_score_nonlinearity', type=str)
         decoder.add_argument('--num_hidden', type=int)
         decoder.add_argument('--final_activation', type=str)
         decoder.add_argument('--sampling_scheme', type=str)

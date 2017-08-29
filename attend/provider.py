@@ -18,9 +18,11 @@ class Provider():
                  dim_feature=None,
                  shuffle_examples=False, shuffle_examples_capacity=None,
                  learn_initial_states=False,
+                 num_image_patches=None,
                  debug=False):
         self.batch_size           = batch_size
         self.T                    = time_steps
+        self.L                    = num_image_patches
         self.time_steps           = time_steps
         self.H                    = num_hidden
         self.num_hidden           = num_hidden
@@ -37,6 +39,7 @@ class Provider():
             if shuffle_examples_capacity is not None else batch_size * 4
 
         self.dim_encoded = self._deduce_encoded_dim()
+        self.dim_patch = None if self.L is None else int(self.dim_encoded / self.L)
 
         # Overridden in InMemoryProvider
         self._batch_sequences_with_states = tf.contrib.training.batch_sequences_with_states
@@ -57,7 +60,7 @@ class Provider():
                 'lstm_h': tf.zeros([self.H], dtype=tf.float32),
                 # Keep the previous batch around too for extra history
                 'history': tf.zeros([self.T, np.prod(self.dim_encoded)], dtype=tf.float32),
-                'context': tf.zeros([self.dim_encoded], dtype=tf.float32),
+                'context': tf.zeros([self.dim_patch or self.dim_encoded], dtype=tf.float32),
                 'output': tf.zeros([1], dtype=tf.float32),
                 'target': tf.zeros([1], dtype=tf.float32),
                 'first': tf.constant(True)

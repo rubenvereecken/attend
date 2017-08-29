@@ -6,6 +6,7 @@ import attend
 from attend import tf_util
 from attend.attention import BahdanauAttention
 from attend.sample import get_sampler
+from attend.common import get_activation
 from functools import partial
 
 log = Log.get_logger(__name__)
@@ -26,6 +27,9 @@ class AttendModel():
                  sampling_min=.75,  # 75% chance to pick truth
                  sampling_decay_steps=None,
                  sampler_kwargs={}, # Just for FixedEpsilonSampler
+                 attention_input=None,
+                 attention_score_nonlinearity=None,
+                 num_image_patches=None,
                  # Variations to try
                  enc2lstm=False, enc2ctx=False,
                  debug=True):
@@ -47,6 +51,7 @@ class AttendModel():
         self.dim_feature = provider.dim_feature
         self.D = np.prod(self.dim_feature)  # Feature dimension when flattened
         self.H = num_hidden
+        self.L = num_image_patches # None if just flat features, used for attn
         self.dropout = dropout
         self.use_dropout_for_training = use_dropout
         self.use_batch_norm = use_batch_norm
@@ -72,14 +77,18 @@ class AttendModel():
         else:
             raise Exception()
 
+        if attention_input is None: attention_input = 'time'
+        self.attention_input = attention_input
         self.attention_units = attention_units
         self.attention_impl = attention_impl
         if attention_impl == 'bahdanau':
             self.attention_layer = partial(
-                BahdanauAttention, attention_units, False)
+                BahdanauAttention, attention_units, False,
+                attention_score_nonlinearity)
         elif attention_impl.startswith('bahdanau_norm'):
             self.attention_layer = partial(
-                BahdanauAttention, attention_units, True)
+                BahdanauAttention, attention_units, True,
+                attention_score_nonlinearity)
         elif attention_impl == 'time_naive':
             # Backward compatibility to rebuild old models
             self.attention_layer = attend.attention.OldTimeNaive
@@ -163,6 +172,7 @@ class AttendModel():
             lstm_scope = None
             decode_lstm_scope = None
             attention_scope = None
+            attention_input_scope = None
             sample_scope = None
 
             # TODO refactor total_steps to elsewhere without breaking my
@@ -213,16 +223,30 @@ class AttendModel():
                     _, (c, h) = lstm_cell(
                         inputs=decoder_lstm_input, state=[c, h])
 
-                if self.attention_layer:
+                if self.attention_layer and self.attention_input == 'time':
                     # for t = 0, use current and t-1 from history
                     # for t = T-1, use all of current frame and none from
                     # history
+                    with tf.variable_scope(attention_input_scope or 'attn_time_input',
+                                           reuse=t!=0) as attention_input_scope:
+                        attention_input = tf.concat([history[:, t + 1:, :],
+                                                    x[:, : t + 1, :]],
+                                                    1, name='window')
+
+                elif self.attention_layer and self.attention_input == 'image':
+                    with tf.variable_scope(attention_input_scope or 'attn_img_input',
+                                           reuse=t!=0) as attention_input_scope:
+                        D_enc = np.prod(x.shape.as_list()[2:])
+                        D_patch = tf.cast(D_enc / self.L, tf.int32)
+                        attention_input = tf.reshape(x[:, t, :], [-1, self.L, D_patch])
+                else:
+                    raise ValueError('Unknown attention_input type {}'.format(self.attention_input))
+
+                if self.attention_layer:
+                    tf.assert_rank_at_least(attention_input, 3)
+
                     with tf.variable_scope(attention_scope or 'attention', reuse=t != 0) as attention_scope:
-                        past_window = tf.concat(
-                            [history[:, t + 1:, :],
-                             x[:, : t + 1, :]],
-                            1, name='window')
-                        attention, alpha = do_attention(past_window, c, t != 0)
+                        attention, alpha = do_attention(attention_input, c, t != 0)
                         attentions.append(attention)
                         alphas.append(alpha)
 
