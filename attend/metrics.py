@@ -25,5 +25,3 @@ def streaming_mse(predictions, targets, keys, lengths, mask=None):
 
     with tf.control_dependencies([total_update, count_update, mse_update]):
         return mse.lookup(keys), mse
-
-

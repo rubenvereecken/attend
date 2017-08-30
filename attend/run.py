@@ -48,6 +48,11 @@ class Runner:
         input.add_argument('--shuffle_examples_capacity', type=int)
         _boolean_argument('shuffle_examples', input)
 
+        training = parser.add_argument_group('Training')
+        training.add_argument('--update_rule', type=str)
+        training.add_argument('--learning_rate', type=float)
+        training.add_argument('--loss_function', type=str)
+
         encoder = parser.add_argument_group('Encoder')
         encoder.add_argument('--conv_impl', type=str)
         encoder.add_argument('--encode_hidden_units', type=int)
@@ -55,8 +60,6 @@ class Runner:
         _boolean_argument('encode_lstm', encoder)
 
         network = parser.add_argument_group('Network')
-        network.add_argument('--update_rule', type=str)
-        network.add_argument('--learning_rate', type=float)
         network.add_argument('--dropout', type=float)
         network.add_argument('--time_steps', type=int)
         _boolean_argument('use_dropout', network)
@@ -66,6 +69,7 @@ class Runner:
         _boolean_argument('use_batch_renorm', network)
         network.add_argument('--batch_norm_decay', type=float)
         network.add_argument('-L', '--num_image_patches', type=int)
+
 
         decoder = parser.add_argument_group('Decoder')
         decoder.add_argument('--attention_impl', type=str)

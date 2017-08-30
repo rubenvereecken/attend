@@ -6,7 +6,7 @@ import attend
 from attend import tf_util
 from attend.attention import BahdanauAttention
 from attend.sample import get_sampler
-from attend.common import get_activation
+from attend.common import get_activation, get_loss_function
 from functools import partial
 
 log = Log.get_logger(__name__)
@@ -15,7 +15,7 @@ log = Log.get_logger(__name__)
 class AttendModel():
     # ALLOWED_ATTN_IMPLS = ['attention']
 
-    def __init__(self, provider, encoder, num_hidden=512, loss_fun='mse',
+    def __init__(self, provider, encoder, num_hidden=512, loss_function='mse',
                  time_steps=None, attention_impl=None, attention_units=None,
                  dropout=None,
                  use_dropout=True,
@@ -72,10 +72,7 @@ class AttendModel():
         self.weight_initializer = tf.contrib.layers.xavier_initializer()
         self.const_initializer = tf.constant_initializer(0.0)
 
-        if loss_fun == 'mse':
-            self.loss_fun = tf.losses.mean_squared_error
-        else:
-            raise Exception()
+        self.loss_fun = get_loss_function(loss_function)
 
         if attention_input is None: attention_input = 'time'
         self.attention_input = attention_input
