@@ -205,9 +205,9 @@ class AttendSolver():
         saver = tf.train.Saver(save_relative_paths=True)
         # Special input runners run separately because the supervisor can't
         # serialize them
-        # input_threads = tf.train.start_queue_runners(sess=sess, coord=coord,
-        #         collection='input_runners')
-        input_threads = []
+        input_threads = tf.train.start_queue_runners(sess=sess, coord=coord,
+                                                     collection='input_runners')
+        # input_threads = []
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
 

@@ -81,7 +81,9 @@ class AttendModel():
         self.attention_input = attention_input
         self.attention_units = attention_units
         self.attention_impl = attention_impl
-        if attention_impl == 'bahdanau':
+        if attention_impl is None or attention_impl == 'none':
+            self.attention_layer = None
+        elif attention_impl == 'bahdanau':
             self.attention_layer = partial(
                 BahdanauAttention, attention_units, False,
                 attention_score_nonlinearity)
@@ -92,8 +94,6 @@ class AttendModel():
         elif attention_impl == 'time_naive':
             # Backward compatibility to rebuild old models
             self.attention_layer = attend.attention.OldTimeNaive
-        elif attention_impl is None or attention_impl == 'none':
-            self.attention_layer = None
         else:
             raise ValueError('Invalid attention impl {}'.format(attention_impl))
 
@@ -239,12 +239,10 @@ class AttendModel():
                         D_enc = np.prod(x.shape.as_list()[2:])
                         D_patch = tf.cast(D_enc / self.L, tf.int32)
                         attention_input = tf.reshape(x[:, t, :], [-1, self.L, D_patch])
-                else:
+                elif self.attention_layer:
                     raise ValueError('Unknown attention_input type {}'.format(self.attention_input))
 
                 if self.attention_layer:
-                    tf.assert_rank_at_least(attention_input, 3)
-
                     with tf.variable_scope(attention_scope or 'attention', reuse=t != 0) as attention_scope:
                         attention, alpha = do_attention(attention_input, c, t != 0)
                         attentions.append(attention)

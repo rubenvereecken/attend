@@ -52,9 +52,8 @@ class SummaryProducer:
         all_summaries = mean_scalars + mean_hists
 
         summary_op = tf.summary.merge(all_summaries)
-        # self.summary_op = summary_op
-        from attend.log import Log; log = Log.get_logger(__name__)
-        log.debug('Built summary test summary op in %.3f s', time() - start)
+        # from attend.log import Log; log = Log.get_logger(__name__)
+        # log.debug('Built summary test summary op in %.3f s', time() - start)
 
         return summary_op
 

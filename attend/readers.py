@@ -5,6 +5,7 @@ import numpy as np
 from collections import OrderedDict
 
 from attend.log import Log; log = Log.get_logger(__name__)
+import attend
 
 # https://gist.github.com/jimfleming/d1118cc630f5c883223a4b4645cc2e7b
 class GeneratorRunner:
@@ -69,9 +70,10 @@ def generate_single_sequence_example(
         reader,
         scope,
         summary_name='input_q',
-        capacity=10,
+        capacity=2, # Used to be 10
         num_epochs=None,
-        shuffle_capacity=0):
+        shuffle_capacity=0,
+        **kwargs):
     """
     Generates a single sequence from a sequence generator
     """
@@ -96,7 +98,8 @@ def generate_single_sequence_example(
 
         # Keep in a separate collection so it can be started manually
         # ... because the supervisor keeps tripping up
-        tf.train.add_queue_runner(queue_runner, collection='input_runners')
+        tf.train.add_queue_runner(queue_runner,
+                                  collection=attend.GraphKeys.INPUT_RUNNERS)
 
         if summary_name:
             tf.summary.scalar(summary_name,
@@ -108,7 +111,13 @@ def generate_single_sequence_example(
         for i, tensor in enumerate(sample):
             tensor.set_shape(shapes[i])
 
-        return sample[0], sample[1], dict(key=sample[2], num_frames=sample[3])
+        example, target, context = sample[0], sample[1], dict(key=sample[2], num_frames=sample[3])
+
+        if shuffle_capacity > 0:
+            example, target, context = \
+                shuffle_data_and_context(example, target, context, shuffle_capacity, **kwargs)
+
+        return example, target, context
 
 
 def generate_single_sequence_example_from_hdf5(filename, feat_name, scope, **kwargs):
