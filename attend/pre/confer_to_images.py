@@ -81,7 +81,8 @@ def process_vids(
         subject_name = vid_dir.split('/')[-1]
         frame_names = sorted(glob.glob(vid_dir + '/*jpg'))
         n_all_frames = len(frame_names)
-        n_frames = min(n_all_frames, 100) if debug else n_all_frames
+        n_frames = n_all_frames
+        # n_frames = 1
         if max_frames and n_frames > max_frames:
             print('Skipping {} of length {}'.format(subject_name, n_frames))
             continue
