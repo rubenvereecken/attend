@@ -22,7 +22,7 @@ class AttendSolver():
         else:
             raise Exception()
 
-        self.loss_names = ['mse', 'pearson_r']
+        self.loss_names = ['mse', 'pearson_r', 'icc']
         from attend import SummaryProducer
         self.summary_producer = SummaryProducer(self.loss_names)
         self.stats_every = stats_every
@@ -94,6 +94,7 @@ class AttendSolver():
               debug=False,
               save_eval_graph=True,
               restore_if_possible=True,
+              keep_all_checkpoints=False,
               show_progress_bar=None):
 
         if show_progress_bar is None and debug is False:
@@ -209,7 +210,8 @@ class AttendSolver():
         # sess = tf_debug.LocalCLIDebugWrapperSession(sess, thread_name_filter="MainThread$")
         sess.run(init_op)
 
-        saver = tf.train.Saver(save_relative_paths=True, max_to_keep=2)
+        saver = tf.train.Saver(save_relative_paths=True,
+                               max_to_keep=None if keep_all_checkpoints else 2)
 
         if restore_if_possible:
             states = tf.train.get_checkpoint_state(log_dir)
@@ -275,7 +277,8 @@ class AttendSolver():
                 if global_step_value % steps_per_epoch == 0:
                     ## END OF EPOCH
                     # SAVING
-                    save_path = saver.save(sess, log_dir + '/model.ckpt', global_step_value)
+                    save_path = saver.save(sess, log_dir + '/model.ckpt',
+                                           global_step_value, write_meta_graph=False)
 
                     # Validation after every epoch
                     if val_provider:

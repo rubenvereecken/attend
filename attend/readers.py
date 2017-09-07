@@ -194,12 +194,12 @@ def shuffle_data_and_context(example, target, context, capacity, min_after_deque
     return example, target, context
 
 
-def read_single_sequence_example_fom_tfrecord(filename, feat_name, scope,
+def read_single_sequence_example_fom_tfrecord(filenames, feat_name, scope,
         shuffle_capacity=0, num_epochs=None, **kwargs):
 
     # with tf.name_scope('read_single_tfrecord'):
     filename_q = tf.train.string_input_producer(
-            [filename], num_epochs=num_epochs,
+            filenames, num_epochs=num_epochs,
             name=kwargs.pop('name', 'filename_queue'))
 
     example, target, context = read_and_decode_from_tfrecords(filename_q, feat_name, scope)

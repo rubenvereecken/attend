@@ -137,6 +137,7 @@ class Provider():
                     allow_small_batch = True  # Required otherwise blocks
                 )
                 example_batch, target_batch = batch.sequences['images'], batch.sequences.get(self.feat_name, None)
+                # example_batch = tf.Print(example_batch, [tf.shape(example_batch)[0]], message='B ')
 
                 # Move the queue runners to a different collection
                 if collection is not None:
@@ -242,7 +243,7 @@ class FileProvider(Provider):
             dim_feature = (np.prod(seq_shape[1:]),)
             # log.warning('%s', dim_feature)
             self.input_producer = partial(readers.read_single_sequence_example_fom_tfrecord,
-                                          filenames[0], feat_name)
+                                          filenames, feat_name)
 
         else:
             raise Exception('Unsupported file format')

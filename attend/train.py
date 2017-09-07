@@ -38,7 +38,7 @@ if __name__ == '__main__':
     from attend.provider import FileProvider, Provider
     from attend.encoder import Encoder
 
-    all_args['filenames'] = [all_args['data_file']]
+    all_args['filenames'] = all_args['data_file']
     # Bit annoying to create the encoder separately, but it's needed by both
     # the provider (for dimensionality deduction) and the model
     # The goal is to have the provider set up asap so it can start reading

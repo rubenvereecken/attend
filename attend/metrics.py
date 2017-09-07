@@ -53,7 +53,7 @@ def streaming_reduce_sum(t, axis=None, weights=None, scope=None):
 
 
 
-def streaming_reduce_mean(t, axis=None, weights=None, scope=None):
+def streaming_reduce_mean(t, axis=None, weights=None, scope=None, name=None):
     """
     Axis can be an array of axes
     """
@@ -78,7 +78,7 @@ def streaming_reduce_mean(t, axis=None, weights=None, scope=None):
         # reduce_dims = tf.gather(dims, axis)
 
         # reduced_count = tf.cast(tf.reduce_prod(reduce_dims), tf.float32)
-        reduced_count = tf.reduce_sum(weights, axis)
+        # reduced_count = tf.reduce_sum(weights, axis)
         t = tf.multiply(t, weights)
 
         total = streaming_reduce_sum(t, axis)
@@ -87,13 +87,23 @@ def streaming_reduce_mean(t, axis=None, weights=None, scope=None):
         # Put 1's where 0's would have been, otherwise it'd be 0/0
         count_ones_for_zeros = tf.cast(tf.logical_not(tf.cast(count, tf.bool)), tf.float32)
 
-        return tf.divide(total, count + count_ones_for_zeros)
+        return tf.divide(total, count + count_ones_for_zeros, name=name)
+
+
+# def streaming_reduce_mean(t, axis=None, weights=None, name=None):
+#     with tf.variable_scope(name, 'streaming_reduce_mean'):
+#     mean_tensor = tf.metrics.meanj
 
 
 def streaming_icc(case, typ):
     assert typ == 1, 'Only ICC(?,1) supported (type 1)'
 
     def _icc(labels, predictions, weights=None, scope=None):
+        # Alas, everything has to be defined for the average local variables
+        # .. which is impossible with allow_small_batch = True
+        labels.shape.assert_is_fully_defined()
+        predictions.shape.assert_is_fully_defined()
+
         labels.shape.assert_is_compatible_with(predictions.shape)
         if labels.shape.ndims == 2:
             # Assume the trailing 1 is forgotten
@@ -101,19 +111,22 @@ def streaming_icc(case, typ):
             predictions = tf.expand_dims(predictions, -1)
             if not weights is None:
                 weights = tf.expand_dims(weights, -1)
+        if weights is None:
+            weights = tf.ones_like(labels)
 
         labels.shape.assert_has_rank(3)
 
         with tf.variable_scope(scope, 'icc_{}_{}'.format(case, typ)):
             shape = tf.shape(labels)
-            B, T, r = tf.unstack(shape)
+            # B, T, r = tf.unstack(shape)
+            B, T, r = labels.shape.as_list()
+
             n = B * T
             # NOTE alright change of heart, do away with batch dimension
             # B x T x 1 => 1 x B.T x 1 (to keep the old batched code)
             y_hat = tf.reshape(predictions, [1, n, r])
             y_lab = tf.reshape(labels, [1, n, r])
             weights = tf.reshape(weights, [1, n, r])
-
 
             assert_r = tf.assert_equal(r, 1, message='I dont think this operation is valid for r > 1')
             with tf.control_dependencies([assert_r]):
@@ -122,6 +135,7 @@ def streaming_icc(case, typ):
 
             # B x 2 x T x 1
             Y = tf.stack([y_hat, y_lab], axis=1)
+            Y_weights = tf.stack([weights, weights], 1)
 
             # Number of ratings, should be 1 for my case
             # k = Y.shape[3]
@@ -131,13 +145,13 @@ def streaming_icc(case, typ):
             k = tf.cast(Y.shape[1].value, tf.float32)
 
             # mean per target
-            mpt = streaming_reduce_mean(Y, 1,
-                                        tf.stack([weights,weights], 1)),   # B x T x 1
+            mpt = streaming_reduce_mean(Y, 1, Y_weights, name='mpt')  # B x T x 1
 
-            tm = streaming_reduce_mean(mpt, 1) # B x 1
+            # tm_ = streaming_reduce_mean(mpt, 1, name='tm') # B x 1
+            tm = streaming_reduce_mean(Y, [1,2])
 
             # mean per rating
-            mpr = streaming_reduce_mean(Y, 2) # B x 2 x 1
+            mpr = streaming_reduce_mean(Y, 2, Y_weights, name='mpr') # B x 2 x 1
 
             # within target sum sqrs
             # The weights multiply makes sure 0-weighted entries don't count
@@ -149,17 +163,16 @@ def streaming_icc(case, typ):
             WMS = WSS / total_n / (k - 1) # B x 1
 
             # Between rater sum sqrs
-            RSS = streaming_reduce_sum(
-                tf.multiply(tf.square(mpr-tf.expand_dims(tm, 1), weights),
-                            1)) * total_n # B x 1
+            rss_tmp = tf.square(mpr-tf.expand_dims(tm, 1))
+            # This one should not be streaming as it's a sum of means
+            RSS = tf.reduce_sum(rss_tmp, 1) * total_n # B x 1
 
             # Between rater mean sqrs
             RMS = RSS / (k - 1) # B x 1
 
             # Between target sum sqrs
-            BSS = streaming_reduce_sum(
-                tf.multiply(tf.square(mpt-tf.expand_dims(tm, 1), weights),
-                            1)) * total_n # B x 1
+            BSS = streaming_reduce_sum(tf.square(mpt-tf.expand_dims(tm, 1)),
+                            1) * k # B x 1
 
             # Between target mean squares
             BMS = BSS / (total_n - 1) # B x 1
@@ -182,10 +195,6 @@ def streaming_icc(case, typ):
         else:
             icc_score = tf.reshape(res, [r])
 
-        # Since ICC is in [-1, 1], and 1 is the best,
-        # transform the same interval to [2, 0]
-        icc_loss = 2 - (icc_score + 1)
-
-        return icc_loss
+        return icc_score
 
     return _icc

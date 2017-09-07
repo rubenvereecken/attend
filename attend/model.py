@@ -404,7 +404,23 @@ class AttendModel():
                 predictions, targets, mask)
             _, mse = tf.contrib.metrics.streaming_mean_squared_error(
                 predictions, targets, mask)
-            # icc = attend.metrics.streaming_icc(3,1)(predictions, targets, mask)
+            # ICC needs fully defined shapes
+            B_max = self.provider.batch_size
+            B_actual = shape[0]
+            padding_shape = [B_max - B_actual, *tf.unstack(shape)[1:]]
+            # padding = tf.zeros([predictions., ])
+            padding = [[0, B_max-B_actual]] + [[0,0]] * (predictions.shape.ndims - 1)
+            # padding = tf.co
+            # padded_predictions = tf.concat([predictions, tf.zeros(padding_shape)], axis=0)
+            padded_predictions = tf.pad(predictions, padding)
+            padded_targets = tf.pad(targets, padding)
+            padded_mask = tf.pad(mask, padding)
+            final_shape = [B_max] + predictions.shape.as_list()[1:]
+            padded_predictions.set_shape(final_shape)
+            padded_targets.set_shape(final_shape)
+            padded_mask.set_shape(final_shape)
+            icc = attend.metrics.streaming_icc(3,1)(
+                padded_predictions, padded_targets, padded_mask)
 
             streaming_vars = tf.contrib.framework.get_local_variables(tf.get_variable_scope())
             streaming_reset = tf.variables_initializer(streaming_vars)
@@ -419,7 +435,7 @@ class AttendModel():
 
                 out['total']['pearson_r'] = corr
                 out['total']['mse'] = mse # Used to be mse_tf
-                # out['total']['icc'] = icc
+                out['total']['icc'] = icc
 
             return out, streaming_reset
 

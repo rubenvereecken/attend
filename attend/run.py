@@ -27,7 +27,8 @@ class Runner:
             parser.set_defaults(**{name: default})
 
         logistics = parser.add_argument_group('Logistics')
-        logistics.add_argument('-i', '--data_file', dest='data_file', required=True)
+        logistics.add_argument('-i', '--data_file', dest='data_file', required=True,
+                               nargs='*')
         logistics.add_argument('--val_data', type=str, default=None)
         logistics.add_argument('--debug', dest='debug', action='store_true')
         logistics.add_argument('--log_dir', type=str, default='log',
@@ -38,6 +39,7 @@ class Runner:
         _boolean_argument('show_progress_bar', logistics)
         _boolean_argument('restore_if_possible', logistics)
         _boolean_argument('restore_or_die', logistics)
+        _boolean_argument('keep_all_checkpoints', logistics)
 
         experiment = parser.add_argument_group('Experiment')
         experiment.add_argument('--steps_per_epoch', type=int)
