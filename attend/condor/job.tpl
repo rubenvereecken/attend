@@ -7,22 +7,31 @@ max_retries = {{ max_retries }}
 Executable  = {{ python }}
 Universe = vanilla
 Arguments = -m attend.train {{ args }}
+{% if prefix and prefix != '' %}
++Prefix = {{ prefix }};
+{% endif %}
 
 {% if prefer == 'gpu' -%}
-# Executable  = {{ python }}
-# Arguments = -m attend.train {{ args }}
 # Preference set to GPU
-Requirements = Memory >= 4000 && CUDACapability >= 3.5
 # Rank = CUDACapability
 Rank = CUDAGlobalMemoryMb
+req = CUDACapability >= 3.5
 {%- else -%}
 # Temporary fix until I know how to force GPU off
 # Executable = /vol/bitbucket/rv1017/attend/attend/condor/cpu_wrapper.sh
 # Arguments = {{ python }} -m attend.train {{ args }}
 # Preference set to CPU
-Requirements = Memory >= 4000
 Rank = KFlops
 request_gpus = 0
+{%- endif %}
+Requirements = ((Arch == "INTEL" && OpSys == "LINUX") || \
+               (Arch == "X86_64" && OpSys =="LINUX")) && $(req)
+request_memory = 4000
+
+{%- if prefix and prefix != '' -%}
+  {%- set prefix = prefix + '_' -%}
+{%- else -%}
+  {%- set prefix = '' -%}
 {%- endif %}
 
 Error = condor_logs/{{ prefix }}$(cluster).err
@@ -41,11 +50,6 @@ max_retries = $(max_retries)
 on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
 
 getenv = True
-
-#environment = "{% for k, v in env.items() -%}{{k}}={{v}} {%- endfor %}"
 environment = "{{env_string}}"
-
-Requirements = (Arch == "INTEL" && OpSys == "LINUX") || \
-               (Arch == "X86_64" && OpSys =="LINUX")
 
 Queue $(N)
