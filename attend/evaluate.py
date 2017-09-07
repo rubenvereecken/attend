@@ -5,7 +5,8 @@ import os
 
 import attend
 from attend import util, tf_util
-from attend import Encoder, AttendSolver, AttendModel
+from attend import Encoder, AttendSolver
+from attend.model import AttendModel
 from attend.provider import Provider, InMemoryProvider
 
 

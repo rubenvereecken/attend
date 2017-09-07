@@ -35,6 +35,7 @@ class Defaults:
         attention_units           = 512,
         learn_initial_states      = True,
         final_activation = 'none',
+        loss_function = 'mse',
 
         # Scheduled sampling
         sampling_scheme      = 'linear',

@@ -36,6 +36,8 @@ class Runner:
         _boolean_argument('save_eval_graph', logistics)
         _boolean_argument('gen_log_dir', logistics)
         _boolean_argument('show_progress_bar', logistics)
+        _boolean_argument('restore_if_possible', logistics)
+        _boolean_argument('restore_or_die', logistics)
 
         experiment = parser.add_argument_group('Experiment')
         experiment.add_argument('--steps_per_epoch', type=int)
@@ -105,6 +107,15 @@ class Runner:
         if args.encode_lstm is None and not args.encode_hidden_units is None:
             raise ValueError('Encode hidden units given without --encode_lstm')
 
+        # In order to make it possible to save the absence of a value
+        # (args.cson), allow for 'none' and convert to None
+        # Kinda silly since a lot of code works with 'none', but oh well
+        # none_updates = {}
+        # for k, v in args.__dict__.items():
+        #     if isinstance(v, str) and v.lower() == 'none':
+        #         none_updates[v] = None
+        # args.__dict__.update(none_updates)
+
         defaults.update({ k: v for (k, v) in args.__dict__.items() if v is not None})
         args.__dict__.update(defaults)
         args.debug = self.debug
@@ -116,6 +127,10 @@ class Runner:
 
         self.setup_log(args.log_dir)
         log = Log.get_logger(__name__)
+
+        if not args.gen_log_dir and args.restore_if_possible is None:
+            args.restore_if_possible = True
+            log.info('Restoring if possible since a log directory is provided')
 
         if 'LD_PRELOAD' in os.environ and 'tcmalloc' in os.environ['LD_PRELOAD']:
             log.info('Using tcmalloc, good on you!')
@@ -139,7 +154,7 @@ class Runner:
         Log.save_condor()
 
 
-    def _gen_log_dir(self, base_dir, prefix=''):
+    def _gen_log_dir(self, base_dir, prefix='', symlink=True):
         # Create a folder to hold results
         import time
         time_str = time.strftime("%d-%m-%Y-%H-%M-%S", time.gmtime())
@@ -150,18 +165,19 @@ class Runner:
         log_dir = base_dir + '/' + base_log_dir
         os.makedirs(log_dir, exist_ok=True)
 
-        link_path = base_dir + '/last'
+        if symlink:
+            link_path = base_dir + '/last'
 
-        try:
-            # Clean up old softlink
-            os.remove(link_path)
-        except OSError as ex:
-            pass # All G
+            try:
+                # Clean up old softlink
+                os.remove(link_path)
+            except OSError as ex:
+                pass # All G
 
-        try:
-            os.symlink(base_log_dir, link_path)
-        except FileExistsError as e:
-            # Race conditions, what can you do
-            pass
+            try:
+                os.symlink(base_log_dir, link_path)
+            except FileExistsError as e:
+                # Race conditions, what can you do
+                pass
 
         return log_dir

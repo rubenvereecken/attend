@@ -22,7 +22,7 @@ class AttendSolver():
         else:
             raise Exception()
 
-        self.loss_names = ['mse', 'pearson_r', 'mse_tf']
+        self.loss_names = ['mse', 'pearson_r']
         from attend import SummaryProducer
         self.summary_producer = SummaryProducer(self.loss_names)
         self.stats_every = stats_every
@@ -53,8 +53,11 @@ class AttendSolver():
             for i in range(1000000000):
                 context_ops = context_ops.copy()
                 context_ops.update(loss_ops['context'])
-                ctx, _, all_loss, total_loss = \
-                    sess.run([context_ops, loss_ops['batch'], loss_ops['all'], loss_ops['total']])
+                # Note I used to also run loss_ops['all'] and loss_ops['batch'],
+                # I think for sequence-wise losses
+                # They've all currently been replaced with streaming 'total'
+                # losses
+                ctx, total_loss = sess.run([context_ops, loss_ops['total']])
                 keys = list(map(lambda x: x.decode(), ctx['key']))
 
                 for i, key in enumerate(keys):
@@ -66,14 +69,15 @@ class AttendSolver():
         except tf.errors.OutOfRangeError:
             log.info('Finished validation in %.2fs', time.time() - start)
 
-        mean_by_loss = { k: np.mean(v) for k, v in all_loss.items() }
+        mean_by_loss = {}
+        # mean_by_loss = { k: np.mean(v) for k, v in all_loss.items() }
         mean_by_loss.update(total_loss)
-        n_keys = len(ctx['all_keys'])
-        for k, v in total_loss.items():
-            all_loss.update({ k: np.zeros((n_keys, *v.shape)) })
+        # n_keys = len(ctx['all_keys'])
+        # for k, v in total_loss.items():
+        #     all_loss.update({ k: np.zeros((n_keys, *v.shape)) })
 
-        summary = self.summary_producer.create_loss_summary(sess, mean_by_loss,
-                all_loss)
+        summary = self.summary_producer.create_loss_summary(sess, mean_by_loss)
+                # all_loss)
         summary_writer.add_summary(summary, global_step)
 
         # TODO threads are joined successfully but weird warnings about queues
@@ -89,6 +93,7 @@ class AttendSolver():
               val_provider=None,
               debug=False,
               save_eval_graph=True,
+              restore_if_possible=True,
               show_progress_bar=None):
 
         if show_progress_bar is None and debug is False:
@@ -123,8 +128,10 @@ class AttendSolver():
                 # tf.get_variable_scope().reuse_variables()
                 val_out, val_ctx = self.model.build_model(val_provider, False)
                 val_outputs = val_out['output']
-                val_losses, _ = self.model.calculate_losses(val_outputs,
-                        val_provider.targets, val_ctx['key'], val_ctx['length'], 'val_loss')
+
+            # Should not reuse variables, so back out of the reusing scope
+            val_losses, _ = self.model.calculate_losses(val_outputs,
+                    val_provider.targets, val_ctx['key'], val_ctx['length'], 'val_loss')
                 # g.add_to_collection('val_outputs', val_outputs)
                 # for v in val_ctx.values():
                 #     g.add_to_collection('val_context', v)
@@ -202,7 +209,17 @@ class AttendSolver():
         # sess = tf_debug.LocalCLIDebugWrapperSession(sess, thread_name_filter="MainThread$")
         sess.run(init_op)
 
-        saver = tf.train.Saver(save_relative_paths=True)
+        saver = tf.train.Saver(save_relative_paths=True, max_to_keep=2)
+
+        if restore_if_possible:
+            states = tf.train.get_checkpoint_state(log_dir)
+            if not states is None:
+                checkpoint_paths = states.all_model_checkpoint_paths
+                last_checkpoint = tf.train.latest_checkpoint(log_dir)
+                log.info('Resuming training from checkpoint {}'.format(last_checkpoint))
+                saver.restore(sess, last_checkpoint)
+                saver.recover_last_checkpoints(checkpoint_paths)
+
         # Special input runners run separately because the supervisor can't
         # serialize them
         input_threads = tf.train.start_queue_runners(sess=sess, coord=coord,
@@ -213,66 +230,65 @@ class AttendSolver():
 
         g.finalize() # No ops can be added after this
 
-        t_start = time.time()
         log.info('Started training')
         losses = np.empty(self.stats_every) # Keep losses to average every so often
-        global_step_value = 0
+        global_step_value = sess.run(global_step)
+        t_start = time.time()
+        t_stats = time.time()
 
         try:
             # while not coord.should_stop():
-            for epoch_i in progress_wrapper(range(num_epochs)):
-                for step_i in progress_wrapper(range(steps_per_epoch)):
-                    if (global_step_value) % self.stats_every == 0:
-                        t_stats = time.time()
-                    try:
-                        # Run batch_loss summary op together with loss_op
-                        # Otherwise it will recompute the loss separately
-                        loss, _, summary, keys = sess.run([loss_op, train_op,
-                                                           summary_op, ctx['key']])
-                        # np.savez('{}/output.{:05d}'.format(log_dir, global_step_value),
-                        #          output=outputs_arr,target=targets_arr)
-                        losses[step_i % self.stats_every] = loss # Circular buffer
-                        # keys = list(map(lambda x: x.decode(), keys))
-                    # If duplicate key is encountered this could happen rarely
-                    except tf.errors.InvalidArgumentError as e:
-                        # log.exception(e)
-                        raise e
-                    global_step_value = tf.train.global_step(sess, global_step)
-                    log.debug('TRAIN %s - %s', global_step_value, loss)
+            while global_step_value < num_epochs * steps_per_epoch:
+                step_i = global_step_value % num_epochs
+            # for epoch_i in progress_wrapper(range(num_epochs)):
+            #     for step_i in progress_wrapper(range(steps_per_epoch)):
+                if (global_step_value) % self.stats_every == 0:
+                    t_stats = time.time()
+                try:
+                    loss, _, summary, keys = sess.run([loss_op, train_op,
+                                                        summary_op, ctx['key']])
+                    # np.savez('{}/output.{:05d}'.format(log_dir, global_step_value),
+                    #          output=outputs_arr,target=targets_arr)
+                    losses[step_i % self.stats_every] = loss # Circular buffer
+                    # keys = list(map(lambda x: x.decode(), keys))
+                # If duplicate key is encountered this could happen rarely
+                except tf.errors.InvalidArgumentError as e:
+                    # log.exception(e)
+                    raise e
+                global_step_value = tf.train.global_step(sess, global_step)
+                log.debug('TRAIN %s - %s', global_step_value, loss)
 
-                    summary_writer.add_summary(summary, global_step_value)
+                summary_writer.add_summary(summary, global_step_value)
 
-                    # Runtime stats every so often
-                    if global_step_value % self.stats_every == 0:
-                        stats_summary = self.summary_producer.create_stats_summary(
-                                sess, time.time() - t_stats, global_step_value,
-                                np.mean(losses))
-                        summary_writer.add_summary(stats_summary, global_step_value)
+                # Runtime stats every so often
+                if global_step_value % self.stats_every == 0:
+                    stats_summary = self.summary_producer.create_stats_summary(
+                            sess, time.time() - t_stats, global_step_value,
+                            np.mean(losses))
+                    summary_writer.add_summary(stats_summary, global_step_value)
 
-
-                    if coord.should_stop():
-                        break
-                    # END STEP
 
                 if coord.should_stop():
                     break
+                # END STEP
 
-                ## END OF EPOCH
-                # SAVING
-                save_path = saver.save(sess, log_dir + '/model.ckpt', global_step_value)
+                if global_step_value % steps_per_epoch == 0:
+                    ## END OF EPOCH
+                    # SAVING
+                    save_path = saver.save(sess, log_dir + '/model.ckpt', global_step_value)
 
-                # Validation after every epoch
-                if val_provider:
-                    self.test(
-                            graph=g, saver=saver,
-                            save_path=save_path,
-                            provider=val_provider,
-                            init_op=init_op,
-                            loss_ops=val_losses,
-                            context_ops=val_ctx,
-                            summary_writer=summary_writer,
-                            global_step = global_step_value
-                            )
+                    # Validation after every epoch
+                    if val_provider:
+                        self.test(
+                                graph=g, saver=saver,
+                                save_path=save_path,
+                                provider=val_provider,
+                                init_op=init_op,
+                                loss_ops=val_losses,
+                                context_ops=val_ctx,
+                                summary_writer=summary_writer,
+                                global_step = global_step_value
+                                )
 
             coord.request_stop()
 

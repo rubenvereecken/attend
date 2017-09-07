@@ -5,6 +5,8 @@ import cson
 
 from attend import util
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+
 class Log:
     filename = None
     log_dir = None
@@ -34,12 +36,18 @@ class Log:
 
 
     @classmethod
-    def get_logger(cls, name):
+    def _get_logger(cls, name):
         if cls.root_logger is None:
             cls.root_logger = logging.getLogger()
             cls.root_logger.warning('No root logger set! Falling back')
 
         return cls.root_logger.getChild(name)
+
+    @classmethod
+    def get_logger(cls, name):
+        import lazy_object_proxy as lazy
+        from functools import partial
+        return lazy.Proxy(partial(Log._get_logger, name))
 
 
     @classmethod
@@ -67,12 +75,15 @@ class Log:
     @classmethod
     def save_git_version(cls, file_name='gitversion'):
         import subprocess
+        git_dir = dir_path + '/../.git'
+        git_logs_file = git_dir + '/logs/HEAD'
         try:
-            sha = subprocess.check_output(['git', 'describe', '--always'])
+            sha = subprocess.check_output(['git', '--git-dir', git_dir,
+                                           '--no-pager', 'log', '--oneline', '-n1'])
             file_path = cls.log_dir + '/{}'.format(file_name)
             with open(file_path, 'w') as f:
                 f.write(sha.decode())
-        except:
+        except Exception as e:
             print('Failed to get git version, skipping')
 
     @classmethod
@@ -92,6 +103,7 @@ class Log:
     @classmethod
     def save_condor(cls, file_name='classad.condor'):
         import subprocess
+        file_path = cls.log_dir + '/{}'.format(file_name)
         try:
             ad = subprocess.check_output(['condor_status', '$(hostname)', '-l'])
             ad = ad.decode()
@@ -100,7 +112,6 @@ class Log:
 
             ad_lines = list(filter(lambda x: len(x) > 0, ad.split('\n')))
             ad = '\n'.join(sorted(ad_lines))
-            file_path = cls.log_dir + '/{}'.format(file_name)
             with open(file_path, 'w') as f:
                 f.write(ad)
         except:

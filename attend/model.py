@@ -391,34 +391,35 @@ class AttendModel():
 
             out = dict(batch={}, all={}, total={})
 
-            loss_tables = {}
-            batch_losses = {}
+            # loss_tables = {}
+            # batch_losses = {}
 
-            batch_mse, mse_table = metrics.streaming_mse(predictions, targets,
-                                                         keys, lengths, mask)
-            batch_losses['mse'] = batch_mse
-            loss_tables['mse'] = mse_table
+            # batch_mse, mse_table = metrics.streaming_mse(predictions, targets,
+            #                                              keys, lengths, mask)
+            # batch_losses['mse'] = batch_mse
+            # loss_tables['mse'] = mse_table
 
-            corr, corr_update = tf.contrib.metrics.streaming_pearson_correlation(
+            # Only use the safe, non-racey streaming output
+            _, corr = tf.contrib.metrics.streaming_pearson_correlation(
                 predictions, targets, mask)
-            tfmse, tfmse_update = tf.contrib.metrics.streaming_mean_squared_error(
+            _, mse = tf.contrib.metrics.streaming_mean_squared_error(
                 predictions, targets, mask)
+            # icc = attend.metrics.streaming_icc(3,1)(predictions, targets, mask)
 
             streaming_vars = tf.contrib.framework.get_local_variables(tf.get_variable_scope())
             streaming_reset = tf.variables_initializer(streaming_vars)
 
-            error_updates = tf.group(corr_update, tfmse_update)
-
-            with tf.control_dependencies([length_update, error_updates]):
+            with tf.control_dependencies([length_update]):
                 all_keys, all_lengths = length_table.export()
                 out['context'] = {'all_keys': all_keys,
                                   'all_lengths': all_lengths}
-                for k in batch_losses.keys():
-                    out['batch'][k] = batch_losses[k]
-                    out['all'][k] = loss_tables[k].export()[1]
+                # for k in batch_losses.keys():
+                #     out['batch'][k] = batch_losses[k]
+                #     out['all'][k] = loss_tables[k].export()[1]
 
                 out['total']['pearson_r'] = corr
-                out['total']['mse_tf'] = tfmse
+                out['total']['mse'] = mse # Used to be mse_tf
+                # out['total']['icc'] = icc
 
             return out, streaming_reset
 

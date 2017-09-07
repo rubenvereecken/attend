@@ -16,7 +16,8 @@ import attend.losses
 
 loss_functions = dict(
     mse=tf.losses.mean_squared_error,
-    rmse=attend.losses.root_mean_squared_error
+    rmse=attend.losses.root_mean_squared_error,
+    icc=attend.losses.icc_loss(3,1)
 )
 
 def get_activation(s):

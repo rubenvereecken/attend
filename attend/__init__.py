@@ -1,3 +1,6 @@
+import demandimport
+demandimport.ignore('tensorflow')
+# demandimport.enable()
 
 
 class GraphKeys:
@@ -17,13 +20,13 @@ class GraphKeys:
     SAMPLING_EPSILON = 'epsilon'
 
 
+# import pdb; pdb.set_trace()  # XXX BREAKPOINT
+
 from .report import SummaryProducer
 from .run import Runner
 from .log import Log
 from .solver import AttendSolver
-from .model import AttendModel
 from .encoder import Encoder
-from .evaluate import Evaluator, ImportEvaluator, RebuildEvaluator
 from .common import *
 
 

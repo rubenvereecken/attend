@@ -10,8 +10,8 @@ class SummaryProducer:
         self.loss_names = loss_names
 
         self.mean_losses = { k: tf.placeholder(tf.float32, ()) for k in self.loss_names }
-        self.mean_hists = { k: tf.placeholder(tf.float32, (None)) for k in self.loss_names }
-        self.mean_hists_norm = { k: tf.placeholder(tf.float32, (None)) for k in self.loss_names }
+        # self.mean_hists = { k: tf.placeholder(tf.float32, (None)) for k in self.loss_names }
+        # self.mean_hists_norm = { k: tf.placeholder(tf.float32, (None)) for k in self.loss_names }
         self.summary_op = self.build_summary_op()
 
         self.last_step = 0
@@ -48,8 +48,10 @@ class SummaryProducer:
     def build_summary_op(self):
         start = time()
         mean_scalars = self.mean_scalar()
-        mean_hists = self.mean_hist()
-        all_summaries = mean_scalars + mean_hists
+        # TODO done away with hists for now
+        # mean_hists = self.mean_hist()
+        # all_summaries = mean_scalars + mean_hists
+        all_summaries = mean_scalars
 
         summary_op = tf.summary.merge(all_summaries)
         # from attend.log import Log; log = Log.get_logger(__name__)
@@ -57,22 +59,24 @@ class SummaryProducer:
 
         return summary_op
 
-    def create_loss_summary(self, sess, mean_loss, mean_by_seq, mean_by_seq_norm=None):
+    def create_loss_summary(self, sess, mean_loss, mean_by_seq=None, mean_by_seq_norm=None):
         feed_dict = {}
         # TODO fix this some day
-        if mean_by_seq_norm is None:
-            mean_by_seq_norm = {}
-            for k, v in mean_by_seq.items():
-                mean_by_seq_norm[k] = np.zeros_like(v)
+        # if mean_by_seq_norm is None:
+        #     mean_by_seq_norm = {}
+        #     for k, v in mean_by_seq.items():
+        #         mean_by_seq_norm[k] = np.zeros_like(v)
 
         for k, v in mean_loss.items():
             feed_dict[self.mean_losses[k]] = v
 
-        for k, v in mean_by_seq.items():
-            feed_dict[self.mean_hists[k]] = v
+        # Used to be for sequence losses, which I've done away with for now
+        # for k, v in mean_by_seq.items():
+        #     feed_dict[self.mean_hists[k]] = v
 
-        for k, v in mean_by_seq_norm.items():
-            feed_dict[self.mean_hists_norm[k]] = v
+        # Used to be for sequence losses 'normalized' by sequence length
+        # for k, v in mean_by_seq_norm.items():
+        #     feed_dict[self.mean_hists_norm[k]] = v
 
         summary = sess.run(self.summary_op, feed_dict=feed_dict)
         return summary
