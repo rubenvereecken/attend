@@ -1,5 +1,6 @@
 import tensorflow as tf
-import attend.ops
+# import attend.ops as ops
+from attend import ops
 
 def root_mean_squared_error(labels, predictions, weights=1., scope=None,
                             loss_collection=tf.GraphKeys.LOSSES):
@@ -27,8 +28,14 @@ def icc(case, typ):
 
     def _icc(labels, predictions, weights=None, scope=None,
              loss_collection=tf.GraphKeys.LOSSES):
-        labels.shape.assert_has_rank(3)
         labels.shape.assert_is_compatible_with(predictions.shape)
+        if labels.shape.ndims == 2:
+            labels = tf.expand_dims(labels, -1)
+        if predictions.shape.ndims == 2:
+            predictions = tf.expand_dims(predictions, -1)
+        if not weights is None and weights.shape.ndims == 2:
+            weights = tf.expand_dims(weights, -1)
+
         if weights is None:
             weights = tf.ones_like(predictions)
         if not weights.dtype.is_compatible_with(tf.float32):
@@ -67,13 +74,16 @@ def icc(case, typ):
             n = tf.cast(n, tf.float32)
 
             # mean per target
-            mpt = attend.ops.reduce_average(Y, 1, Y_weights)  # B x T x 1
+            mpt = ops.reduce_average(Y, 1, Y_weights)  # B x T x 1
+            # mpt = tf.reduce_mean(Y, 1)
 
             # tm = tf.reduce_mean(mpt, 1) # B x 1
-            tm = attend.ops.reduce_average(Y, [1,2], Y_weights)
+            tm = ops.reduce_average(Y, [1,2], Y_weights)
+            # tm = tf.reduce_mean(Y, [1,2])
 
             # mean per rating
-            mpr = attend.ops.reduce_average(Y, 2, Y_weights) # B x 2 x 1
+            mpr = ops.reduce_average(Y, 2, Y_weights) # B x 2 x 1
+            # mpr = tf.reduce_mean(Y, 2)
 
             # within target sum sqrs
             WSS = tf.reduce_sum(
