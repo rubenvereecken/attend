@@ -27,8 +27,14 @@ class AttendSolver():
         self.summary_producer = SummaryProducer(self.loss_names)
         self.stats_every = stats_every
 
+        # TODO
+        # This will contain the whole validation set, for losses
+        # that are not implemented streaming
+        self.placeholders_for_loss = {}
+
 
     def test(self, graph, saver, save_path, provider, init_op, context_ops, loss_ops,
+             output_op,
             summary_writer, global_step):
         # Reasons for building a new session every validation step:
         # - There is no way to keep track of epochs OR to restart queues
@@ -49,6 +55,11 @@ class AttendSolver():
 
         start = time.time()
 
+        # TODO rid of this, memory expensive
+        # Save the sequences so we can do an in-memory icc test
+        predictions_by_key = OrderedDict()
+        targets_by_key = OrderedDict()
+
         try:
             for i in range(1000000000):
                 context_ops = context_ops.copy()
@@ -57,17 +68,29 @@ class AttendSolver():
                 # I think for sequence-wise losses
                 # They've all currently been replaced with streaming 'total'
                 # losses
-                ctx, total_loss = sess.run([context_ops, loss_ops['total']])
+                ctx, total_loss, predictions, targets = sess.run(
+                    [context_ops, loss_ops['total'],
+                     output_op, provider.targets])
                 keys = list(map(lambda x: x.decode(), ctx['key']))
 
                 for i, key in enumerate(keys):
-                    if key not in seq_lengths_by_key:
-                        seq_lengths_by_key[key] = ctx['length'][i]
+                    # if key not in seq_lengths_by_key:
+                    #     seq_lengths_by_key[key] = ctx['length'][i]
+
+                    predictions_bits = predictions_by_key.get(key, [])
+                    targets_bits = targets_by_key.get(key, [])
+                    predictions_bits.append(predictions[i])
+                    targets_bits.append(targets[i])
+                    predictions_by_key[key] = predictions_bits
+                    targets_by_key[key] = targets_bits
 
                 if coord.should_stop():
                     log.warning('Validation stopping because coord said so')
         except tf.errors.OutOfRangeError:
             log.info('Finished validation in %.2fs', time.time() - start)
+
+        seq_lengths_by_key = OrderedDict(zip(ctx['all_keys'],
+                                             ctx['all_lengths']))
 
         mean_by_loss = {}
         # mean_by_loss = { k: np.mean(v) for k, v in all_loss.items() }
@@ -75,6 +98,34 @@ class AttendSolver():
         # n_keys = len(ctx['all_keys'])
         # for k, v in total_loss.items():
         #     all_loss.update({ k: np.zeros((n_keys, *v.shape)) })
+
+        # Compute icc manually
+        def _piece_together(d):
+            return OrderedDict((k, np.concatenate(v)) for k, v in d.items())
+        max_length = max(seq_lengths_by_key.values())
+        predictions_by_key = _piece_together(predictions_by_key)
+        targets_by_key = _piece_together(targets_by_key)
+        max_padded_length = max(map(lambda v: v.shape[0], targets_by_key.values()))
+
+        def _padding(v):
+            padding = np.zeros([2, len(v.shape)], dtype=int)
+            assert max_padded_length >= v.shape[0]
+            padding[0][1] = max_padded_length - v.shape[0]
+            return padding
+        def _pad_and_stack(d):
+            return np.stack(np.pad(v, _padding(v), 'constant') for k, v in d.items())
+        predictions = _pad_and_stack(predictions_by_key)
+        targets = _pad_and_stack(targets_by_key)
+        del predictions_by_key, targets_by_key
+
+        icc_op = loss_ops['icc']
+        icc_score = sess.run(icc_op, {
+            self.placeholders_for_loss['predictions']: predictions,
+            self.placeholders_for_loss['targets']: targets,
+            self.placeholders_for_loss['lengths']: list(seq_lengths_by_key.values()),
+        })
+        mean_by_loss['icc'] = icc_score
+        del predictions, targets
 
         summary = self.summary_producer.create_loss_summary(sess, mean_by_loss)
                 # all_loss)
@@ -133,10 +184,16 @@ class AttendSolver():
             # Should not reuse variables, so back out of the reusing scope
             val_losses, _ = self.model.calculate_losses(val_outputs,
                     val_provider.targets, val_ctx['key'], val_ctx['length'], 'val_loss')
-                # g.add_to_collection('val_outputs', val_outputs)
-                # for v in val_ctx.values():
-                #     g.add_to_collection('val_context', v)
-                # g.add_to_collection('val_losses', val_losses)
+            loss_predictions = tf.placeholder(tf.float32, [None, None, 1])
+            loss_targets = tf.placeholder(tf.float32, [None, None, 1])
+            loss_lengths = tf.placeholder(tf.int32, [None])
+            self.placeholders_for_loss.update(dict(predictions=loss_predictions,
+                                               targets=loss_targets,
+                                               lengths=loss_lengths))
+            from .losses import icc
+            icc_loss = self.model.calculate_loss(loss_predictions, loss_targets,
+                                                 loss_lengths, icc(3,1))
+            val_losses['icc'] = icc_loss
 
             if debug:
                 assert n_vars == len(tf.trainable_variables()), 'New vars were created for val'
@@ -289,6 +346,7 @@ class AttendSolver():
                                 init_op=init_op,
                                 loss_ops=val_losses,
                                 context_ops=val_ctx,
+                                output_op=val_outputs,
                                 summary_writer=summary_writer,
                                 global_step = global_step_value
                                 )

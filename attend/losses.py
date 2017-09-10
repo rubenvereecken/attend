@@ -45,10 +45,11 @@ def icc(case, typ):
             shape = tf.shape(labels)
             B, T, r = tf.unstack(shape)
             n = B * T
-            total_n = tf.cast(tf.reduce_sum(weights), tf.float32)
+
+            # Important to use 'total_n' as it is a masked/weighted count
             assert_single_target = tf.assert_equal(r, 1, message='Only r=1 supported')
             with tf.control_dependencies([assert_single_target]):
-                total_n = tf.identity(total_n)
+                total_n = tf.cast(tf.reduce_sum(weights), tf.float32)
 
             # NOTE alright change of heart, do away with batch dimension
             # B x T x 1 => 1 x B.T x 1 (to keep the old batched code)

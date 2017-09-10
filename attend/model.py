@@ -339,8 +339,10 @@ class AttendModel():
             keys = tf.identity(keys, name='key')
             return keys
 
-    def calculate_loss(self, predictions, targets, lengths=None):
+    def calculate_loss(self, predictions, targets, lengths=None, loss_fun=None):
         # predictions.shape.assert_is_compatible_with(targets)
+        if loss_fun is None:
+            loss_fun = self.loss_fun
 
         with tf.variable_scope('loss'):
             T = tf.shape(targets)[1]
@@ -353,7 +355,7 @@ class AttendModel():
             if predictions.shape.ndims > 2:
                 mask = tf.expand_dims(mask, -1)
 
-            loss = self.loss_fun(targets, predictions, weights=mask)
+            loss = loss_fun(targets, predictions, weights=mask)
 
         # if self.debug:
         #     loss = tf.Print(loss, [loss], message='loss ')
@@ -384,10 +386,11 @@ class AttendModel():
                 key_dtype=tf.string, value_dtype=tf.int64, default_value=0, name='length_table')
 
             mask = tf.cast(tf.sequence_mask(lengths, T), tf.float32)
-            # if predictions.shape.ndims > 2:
-            #     mask = tf.expand_dims(mask, -1)
-            length_update = length_table.insert(
-                keys, tf.cast(lengths, tf.int64))
+
+            # Keep track of lengths
+            length_so_far = length_table.lookup(keys, 'length_lookup')
+            length_so_far += tf.cast(lengths, tf.int64)
+            length_update = length_table.insert(keys, length_so_far)
 
             out = dict(batch={}, all={}, total={})
 
@@ -419,8 +422,8 @@ class AttendModel():
             padded_predictions.set_shape(final_shape)
             padded_targets.set_shape(final_shape)
             padded_mask.set_shape(final_shape)
-            icc = attend.metrics.streaming_icc(3,1)(
-                padded_predictions, padded_targets, padded_mask)
+            # icc = attend.metrics.streaming_icc(3,1)(
+            #     padded_predictions, padded_targets, padded_mask)
 
             streaming_vars = tf.contrib.framework.get_local_variables(tf.get_variable_scope())
             streaming_reset = tf.variables_initializer(streaming_vars)
@@ -435,7 +438,7 @@ class AttendModel():
 
                 out['total']['pearson_r'] = corr
                 out['total']['mse'] = mse # Used to be mse_tf
-                out['total']['icc'] = icc
+                # out['total']['icc'] = icc
 
             return out, streaming_reset
 
