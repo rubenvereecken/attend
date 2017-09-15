@@ -1,14 +1,14 @@
 # Condor variables can overwritten at run-time using 'var = value'
 # e.g. condor_submit <( submit.py ) 'N = 5'
 
-N = {{ N }}
-max_retries = {{ max_retries }}
+N = 1
+max_retries = 3
 
 Executable  = {{ python }}
 Universe = vanilla
 Arguments = -m attend.train {{ args }}
 {% if prefix and prefix != '' %}
-+Prefix = {{ prefix }};
++Prefix = '{{ prefix }}';
 {% endif %}
 
 {% if prefer == 'gpu' -%}
