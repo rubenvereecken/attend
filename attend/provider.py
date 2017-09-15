@@ -163,14 +163,14 @@ class Provider():
                     for r in removed:
                         tf.train.add_queue_runner(r, collection)
 
-                self.features = { k: tf.identity(batch.sequences[k], name=k) \
-                                 for k in self.feature_names }
+                # self.features = { k: tf.identity(batch.sequences[k], name=k) \
+                #                  for k in self.feature_names }
+                self.features = { k: batch.sequences[k] for k in self.feature_names }
                 self.targets = batch.sequences.get(self.target_name, None)
                 self.state_saver = batch
                 tf_util.add_to_collection(attend.GraphKeys.INPUT,
                                           list(self.features.values()))
-                tf_util.add_to_collection(attend.GraphKeys.INPUT,
-                                          tf.identity(self.targets, name=self.target_name))
+                tf_util.add_to_collection(attend.GraphKeys.INPUT, self.targets)
                 # This fixes an expectation of targets being single-dimensional
                 # So like [?, T, 1] instead of just [?, T]
                 if self.targets is not None and len(self.targets.shape) <= 2:
@@ -308,19 +308,18 @@ def batch_sequences_with_states(
 
 
 class InMemoryProvider(Provider):
-    def __init__(self, feature_dims, *args, **kwargs):
+    def __init__(self, feature_dims={}, *args, **kwargs):
         self.feature_dims = feature_dims
         self.feature_names = list(feature_dims.keys())
 
         super().__init__(*args, **kwargs)
 
-        if 'sequence_dims' not in kwargs:
-            raise Exception('MemoryProvider requires feature dimensions')
+        # if 'sequence_dims' not in kwargs:
+        #     raise Exception('MemoryProvider requires feature dimensions')
 
         # Gets populated by the input producer
         self.sequence_placeholders = {}
         self.context_placeholders = {}
-
 
         self.input_producer = self._placeholder_provider
         self._batch_sequences_with_states = batch_sequences_with_states
@@ -342,7 +341,7 @@ class InMemoryProvider(Provider):
                                                       name=k)
 
             self.sequence_placeholders[self.target_name] = tf.placeholder(tf.float32,
-                                                          shape=(None, None,), name='targets')
+                                                          shape=(None, None,), name=self.target_name)
 
             return self.sequence_placeholders, self.context_placeholders
 

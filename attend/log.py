@@ -120,7 +120,9 @@ class Log:
     @classmethod
     def last_logdir(cls, path, prefix=None):
         import re
-        r = re.compile('^((?P<prefix>.*?)_)?(?P<time_stamp>[0-9]{2}-[0-9]{2}-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2})')
+        r = re.compile('^((?P<prefix>.*?)_)?' +
+                       '(?P<time_stamp>[0-9]{2}-[0-9]{2}-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2})' +
+                       '(\.(?P<cluster>[0-9]{5}))?')
         dirs = os.listdir(path)
         matches = zip(map(lambda s: r.match(s), dirs), dirs)
         matches = filter(lambda x: x[0], matches)

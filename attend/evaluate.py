@@ -252,12 +252,23 @@ class ImportEvaluator(Evaluator):
             except OSError as e:
                 raise Exception('eval_model.meta.proto not found, maybe an old implementation?')
 
-            input = tf_util.get_collection_as_dict(attend.GraphKeys.INPUT)
+            input_tensors = tf_util.get_collection_as_dict(attend.GraphKeys.INPUT)
+            # TODO remove, this is backwards compatibility
+            input = {}
+            for k, v in input_tensors.items():
+                parents = tf_util.get_tensor_inputs(v)
+                if len(parents) > 0:
+                    input[k] = parents[0]
+                else:
+                    input[k] = v
+
             state = self.graph.get_collection(attend.GraphKeys.STATE_SAVER)
             state = { '_' + tf_util.name(v): v for v in state }
+            print(input.keys())
+            assert len(input) == 2, 'We need to talk'
             state['_sequences'] = {
                 'images': input['features'],
-                'conflict': input['targets'],
+                'conflict': input['conflict'],
             }
             self.state_saver = DictProxy(state)
             output = tf_util.get_collection_as_dict(attend.GraphKeys.OUTPUT)
@@ -269,14 +280,13 @@ class ImportEvaluator(Evaluator):
     def get_saver(self):
         return self.saver
 
-
     def _build_reset(self):
         reset_op = self.graph.get_collection(attend.GraphKeys.STATE_RESET)[0]
         return reset_op
 
 
     @classmethod
-    def import_from_logs(cls, log_dir, feat_dim=(272,), meta_path='eval_model.meta.proto',
+    def import_from_logs(cls, log_dir, meta_path='eval_model.meta.proto',
                          initialize=True):
         if not os.path.isdir(log_dir):
             raise Exception('Log dir does not exist')
@@ -284,7 +294,7 @@ class ImportEvaluator(Evaluator):
         args = Evaluator.get_args(log_dir)
 
         encoder = util.init_with(Encoder, args)
-        provider = InMemoryProvider(encoder=encoder, dim_feature=feat_dim,
+        provider = InMemoryProvider(encoder=encoder,
                 **util.pick(args, util.params_for(Provider.__init__)))
         model = AttendModel(provider, encoder,
                 **util.pick(args, util.params_for(AttendModel.__init__)))

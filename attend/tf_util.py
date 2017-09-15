@@ -27,3 +27,5 @@ def get_collection_as_dict(key, graph=None):
 def get_collection_as_singleton(key, graph=None):
     return list(get_collection_as_dict(key, graph).values())[0]
 
+def get_tensor_inputs(t):
+    return t._op._inputs
