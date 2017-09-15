@@ -268,7 +268,7 @@ class ImportEvaluator(Evaluator):
             assert len(input) == 2, 'We need to talk'
             state['_sequences'] = {
                 'images': input['features'],
-                'conflict': input['conflict'],
+                'conflict': input.get('conflict') or input.get('targets') ,
             }
             self.state_saver = DictProxy(state)
             output = tf_util.get_collection_as_dict(attend.GraphKeys.OUTPUT)

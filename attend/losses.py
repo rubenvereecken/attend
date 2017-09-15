@@ -15,7 +15,7 @@ def root_mean_squared_error(labels, predictions, weights=1., scope=None,
     return rmse
 
 
-def icc(case, typ):
+def icc(case, typ, weighted=True):
     """
     Functionally equivalent to Robert's
 
@@ -76,15 +76,18 @@ def icc(case, typ):
 
             # mean per target
             mpt = ops.reduce_average(Y, 1, Y_weights)  # B x T x 1
-            # mpt = tf.reduce_mean(Y, 1)
+            if not weighted:
+                mpt = tf.reduce_mean(Y, 1)
 
             # tm = tf.reduce_mean(mpt, 1) # B x 1
             tm = ops.reduce_average(Y, [1,2], Y_weights)
-            # tm = tf.reduce_mean(Y, [1,2])
+            if not weighted:
+                tm = tf.reduce_mean(Y, [1,2])
 
             # mean per rating
             mpr = ops.reduce_average(Y, 2, Y_weights) # B x 2 x 1
-            # mpr = tf.reduce_mean(Y, 2)
+            if not weighted:
+                mpr = tf.reduce_mean(Y, 2)
 
             # within target sum sqrs
             WSS = tf.reduce_sum(
@@ -130,8 +133,8 @@ def icc(case, typ):
     return _icc
 
 
-def icc_loss(case, typ):
-    icc_fun = icc(case, typ)
+def icc_loss(case, typ, weighted=True):
+    icc_fun = icc(case, typ, weighted)
 
     def icc_loss_wrapper(*args, **kwargs):
         icc_score = icc_fun(*args, **kwargs)
