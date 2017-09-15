@@ -5,7 +5,7 @@ import sys
 import argparse
 import shutil
 
-from admin import latest_checkpoint_step
+from attend.scripts.admin import latest_checkpoint_step
 
 
 def main():

@@ -246,7 +246,6 @@ class ImportEvaluator(Evaluator):
 
     def _build_model(self):
         with self.graph.as_default():
-            # Imports the graph as well
             try:
                 self.saver = tf.train.import_meta_graph(self.log_dir + '/' + self.meta_path)
             except OSError as e:
@@ -264,11 +263,11 @@ class ImportEvaluator(Evaluator):
 
             state = self.graph.get_collection(attend.GraphKeys.STATE_SAVER)
             state = { '_' + tf_util.name(v): v for v in state }
-            print(input.keys())
             assert len(input) == 2, 'We need to talk'
             state['_sequences'] = {
                 'images': input['features'],
-                'conflict': input.get('conflict') or input.get('targets') ,
+                'conflict': input.get('conflict') if not input.get('conflict') is None \
+                    else input.get('targets'),
             }
             self.state_saver = DictProxy(state)
             output = tf_util.get_collection_as_dict(attend.GraphKeys.OUTPUT)
