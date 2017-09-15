@@ -8,6 +8,7 @@ from attend.attention import BahdanauAttention
 from attend.sample import get_sampler
 from attend.common import get_activation, get_loss_function
 from functools import partial
+from collections import OrderedDict
 
 log = Log.get_logger(__name__)
 
@@ -48,8 +49,7 @@ class AttendModel():
         self.provider = provider
         self.encoder = encoder
 
-        self.dim_feature = provider.dim_feature
-        self.D = np.prod(self.dim_feature)  # Feature dimension when flattened
+        # self.flat_sequence_dims = { k: np.prod(dims) for k, dims in provider.sequence_dims }
         self.H = num_hidden
         self.L = num_image_patches # None if just flat features, used for attn
         self.dropout = dropout
@@ -133,34 +133,43 @@ class AttendModel():
         if use_dropout and self.dropout in [1, None]:
             raise ValueError('Bad dropout value %s', self.dropout)
 
-        T = self.T if self.T is not None else tf.shape(features[1])
+        assert not self.T is None
+        T = self.T
+        # feature_dims = np.sum([dim for k, dim in provider.sequence_dims.items()])
+        # Feature dims are currently flat tho so no flattening needed
+        feature_dims = provider.feature_dims
 
-        x = features
-
+        x = OrderedDict()
         with tf.variable_scope('input_shape'):
-            batch_size = tf.shape(features)[0]
-            x = tf.reshape(x, [batch_size, -1, *self.dim_feature])
+            batch_size = tf.shape(list(features.values())[0])[0]
+            for k, v in provider.features.items():
+                x[k] = tf.reshape(v, [batch_size, -1, *feature_dims[k]])
 
-        x = self.encoder(x, provider, is_training)
+        x_encs = { name: self.encoder(x[name], provider, is_training, name) \
+                 for name in provider.feature_names}
+
+        # TODO okay so best thing is just to have the decoder logic in a
+        # separate function at lesat for now and run it once for each encoded
 
         if state_saver is not None:
-            c = provider.state('lstm_c')
-            h = provider.state('lstm_h')
-            history = provider.state('history')
-            context = provider.state('context')
+            cs = { name: provider.state('.'.join([name, 'lstm_c'])) for name in provider.feature_names }
+            hs = { name: provider.state('.'.join([name, 'lstm_h'])) for name in provider.feature_names }
+            # Just per time step, so unlike `alphas` which is a list over time
+            contexts = { name: provider.state('.'.join([name, 'context'])) for name in provider.feature_names }
             output = provider.state('output')
             target = provider.state('target')
             first = provider.state('first')
         else:
-            c, h = self._initial_lstm(x)
+            raise Exception("Not supported")
+            # c, h = self._initial_lstm(x)
 
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
 
         outputs = []
         if self.attention_layer:
             do_attention = self.attention_layer()
-            attentions = []
-            alphas = []
+            attentions = { k: [] for k in provider.feature_names }
+            alphas = { k: [] for k in provider.feature_names }
         else:
             attentions = None
             alphas = None
@@ -207,68 +216,48 @@ class AttendModel():
                     #                         tf.range(batch_size),
                     #                         dtype=tf.float32)
 
-                with tf.name_scope(lstm_scope or 'lstm') as lstm_scope:
-                    # Context is just previous encoded when not using attention
-                    decoder_lstm_input = tf.concat(
-                        [prev_target, context],
-                        1, 'decoder_lstm_input')
-                    if self.enc2lstm:
-                        decoder_lstm_input = tf.concat(
-                            [decoder_lstm_input, x[:, t, :]], 1)
+                for feature in provider.feature_names:
+                    c, h = cs[feature], hs[feature]
+                    x_enc = x_encs[feature]
+                    c, h = self._decoder_lstm(c, h, lstm_cell, prev_target,
+                                              contexts[feature], x_enc,
+                                              t!=0)
+                    cs[feature], hs[feature] = c, h
 
-                    # _ and h are the same, the LSTM output
-                    _, (c, h) = lstm_cell(
-                        inputs=decoder_lstm_input, state=[c, h])
+                    # Encoded history is saved per feature
+                    history = provider.state('.'.join([feature, 'history']))
 
-                if self.attention_layer and self.attention_input == 'time':
-                    # for t = 0, use current and t-1 from history
-                    # for t = T-1, use all of current frame and none from
-                    # history
-                    with tf.variable_scope(attention_input_scope or 'attn_time_input',
-                                           reuse=t!=0) as attention_input_scope:
-                        attention_input = tf.concat([history[:, t + 1:, :],
-                                                    x[:, : t + 1, :]],
-                                                    1, name='window')
+                    if self.attention_layer and self.attention_input == 'time':
+                        attention_input = self._time_attention(history, x_enc,
+                                                               t, t!=0)
+                    elif self.attention_layer and self.attention_input == 'image':
+                        attention_input = self._img_attention(history,
+                                                              x_enc,
+                                                              t, t!=0)
+                    elif self.attention_layer:
+                        raise ValueError('Unknown attention_input type {}'.format(self.attention_input))
 
-                elif self.attention_layer and self.attention_input == 'image':
-                    with tf.variable_scope(attention_input_scope or 'attn_img_input',
-                                           reuse=t!=0) as attention_input_scope:
-                        D_enc = np.prod(x.shape.as_list()[2:])
-                        D_patch = tf.cast(D_enc / self.L, tf.int32)
-                        attention_input = tf.reshape(x[:, t, :], [-1, self.L, D_patch])
-                elif self.attention_layer:
-                    raise ValueError('Unknown attention_input type {}'.format(self.attention_input))
-
-                if self.attention_layer:
-                    with tf.variable_scope(attention_scope or 'attention', reuse=t != 0) as attention_scope:
-                        attention, alpha = do_attention(attention_input, c, t != 0)
-                        attentions.append(attention)
-                        alphas.append(alpha)
-
-                        if self.enc2ctx:
-                            flat_history = tf.reshape(
-                                x, [batch_size, -1],
-                                name='flat_history')
-                            context = tf.concat(
-                                [flat_history, attention],
-                                1, name='enc2ctx')
-                        else:
-                            context = attention
-
-                        # TODO checkout where to best put dropout with attention
-                        if use_dropout:
-                            context = tf.nn.dropout(context, self.dropout)
-                else:
-                    context = x[:, t, :]
+                    if self.attention_layer:
+                        context, attention, alpha = \
+                            self._attention(do_attention, attention_input, c,
+                                            use_dropout, t!=0)
+                        attentions[feature].append(attention)
+                        alphas[feature].append(alpha)
+                    else:
+                        context = x_enc[:, t, :]
+                    contexts[feature] = context
 
                 with tf.name_scope(decode_lstm_scope or 'final_decode') as decode_lstm_scope:
-                    output = self._decode(context, h, is_training, reuse=(t != 0))
+                    final_context = tf.concat([contexts[k] for k in provider.feature_names], 1)
+                    output = self._decode(final_context, h, is_training, (t != 0))
                     outputs.append(output)
 
             outputs = tf.stack(outputs, axis=1)  # B x T x 1
             if self.attention_layer:
-                attentions = tf.stack(attentions, axis=1, name='attention')
-                alphas = tf.stack(alphas, axis=1, name='alpha')
+                attentions = { k: tf.stack(v, axis=1, name='attention') \
+                               for k, v in attentions.items() }
+                alphas = { k: tf.stack(v, axis=1, name='alpha') \
+                           for k, v in alphas.items() }
 
         control_deps = []
 
@@ -277,21 +266,21 @@ class AttendModel():
             save_state_scope = 'save_state'
             with tf.variable_scope(save_state_scope):
                 state_saves = [
-                    state_saver.save_state('lstm_c', c, 'lstm_c'),
-                    state_saver.save_state('lstm_h', h, 'lstm_h'),
                     state_saver.save_state('first', tf.zeros(
                         [batch_size], dtype=tf.bool), 'first'),
-                    state_saver.save_state('history', x, 'history'),
-                    state_saver.save_state('context', context, 'context'),
                     state_saver.save_state('output', output, 'last_output'),
-                    state_saver.save_state('target', targets[:,-1,:], 'output')
+                    state_saver.save_state('target', targets[:,-1,:], 'output'),
                 ]
+                for name in provider.feature_names:
+                    for k, v in zip(['history', 'lstm_c', 'lstm_h', 'context'],
+                                 [x_encs, cs, hs, contexts]):
+                        key = name + '.' + k
+                        state_saves.append(
+                            state_saver.save_state(key, v[name], key)
+                        )
                 save_state = tf.group(*state_saves)
                 control_deps.append(save_state)
 
-                # Makes it easier by just injecting the save state control op
-                # into the rest of the computation graph, but also makes it
-                # messy
                 with tf.control_dependencies(control_deps):
                     lengths = state_saver.length
                     # Tricksy way of injecting dependency
@@ -317,9 +306,10 @@ class AttendModel():
         tf_util.add_to_collection(attend.GraphKeys.OUTPUT, out['output'])
 
         if self.attention_layer:
+            assert len(attentions) == 1, 'Unpack properly if multiple'
             out.update({
-                'attention': tf.identity(attentions, name='attention'),
-                'alpha': tf.identity(alphas, name='alpha'),
+                'attention': tf.identity(list(attentions.values())[0], name='attention'),
+                'alpha': tf.identity(list(alphas.values())[0], name='alpha'),
             })
             tf_util.add_to_collection(
                 attend.GraphKeys.OUTPUT, [
@@ -441,6 +431,62 @@ class AttendModel():
                 # out['total']['icc'] = icc
 
             return out, streaming_reset
+
+    def _time_attention(self, history, x_enc, t, reuse):
+        # for t = 0, use current and t-1 from history
+        # for t = T-1, use all of current frame and none from history
+        with tf.variable_scope('attn_time_input', reuse=reuse):
+            attention_input = tf.concat([history[:, t+1:, :],
+                                    x_enc[:, :t+1, :]],
+                                   axis=1, name='window')
+
+        return attention_input
+
+    def _img_attention(self, history, x_enc, t, reuse):
+        with tf.variable_scope('attn_img_input', reuse=reuse):
+            D_enc = np.prod(x_enc.shape.as_list()[2:])
+            D_patch = tf.cast(D_enc / self.L, tf.int32)
+            attention_input = tf.reshape(x_enc[:, t, :], [-1, self.L, D_patch])
+
+        return attention_input
+
+    def _attention(self, attention_fn, attention_input, c, use_dropout, reuse):
+        with tf.variable_scope('attention', reuse=reuse) as attention_scope:
+            attention, alpha = attention_fn(attention_input, c, reuse)
+
+            if self.enc2ctx:
+                flat_history = tf.reshape(
+                    x, [batch_size, -1],
+                    name='flat_history')
+                context = tf.concat(
+                    [flat_history, attention],
+                    1, name='enc2ctx')
+            else:
+                context = attention
+
+            # TODO checkout where to best put dropout with attention
+            if use_dropout:
+                context = tf.nn.dropout(context, self.dropout)
+
+        return context, attention, alpha
+
+    def _decoder_lstm(self, c, h, lstm_cell, prev_target, prev_context, x_enc, reuse):
+        with tf.variable_scope('lstm', reuse=reuse):
+            decoder_lstm_input = tf.concat([prev_target, prev_context], 1,
+                                        'decoder_lstm_input')
+            # TODO give it a try why not
+            if self.enc2lstm:
+                decoder_lstm_input = tf.concat(
+                    [decoder_lstm_input, x_enc[:, t, :]], 1)
+
+            # _ and h are the same, the LSTM output
+            _, (c, h) = lstm_cell(
+                inputs=decoder_lstm_input, state=[c, h])
+
+        return c, h
+
+
+
 
     def _decode(self, x, h, is_training, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):

@@ -107,15 +107,9 @@ class AttendSolver():
         targets_by_key = _piece_together(targets_by_key)
         max_padded_length = max(map(lambda v: v.shape[0], targets_by_key.values()))
 
-        def _padding(v):
-            padding = np.zeros([2, len(v.shape)], dtype=int)
-            assert max_padded_length >= v.shape[0]
-            padding[0][1] = max_padded_length - v.shape[0]
-            return padding
-        def _pad_and_stack(d):
-            return np.stack(np.pad(v, _padding(v), 'constant') for k, v in d.items())
-        predictions = _pad_and_stack(predictions_by_key)
-        targets = _pad_and_stack(targets_by_key)
+        from attend.util import pad_and_stack
+        predictions = pad_and_stack(predictions_by_key.values())
+        targets = pad_and_stack(targets_by_key.values())
         del predictions_by_key, targets_by_key
 
         icc_op = loss_ops['icc']
@@ -268,7 +262,7 @@ class AttendSolver():
         sess.run(init_op)
 
         saver = tf.train.Saver(save_relative_paths=True,
-                               max_to_keep=None if keep_all_checkpoints else 2)
+                               max_to_keep=num_epochs if keep_all_checkpoints else 2)
 
         if restore_if_possible:
             states = tf.train.get_checkpoint_state(log_dir)
@@ -374,7 +368,8 @@ class AttendSolver():
         from attend.provider import InMemoryProvider, Provider
 
         graph = tf.Graph()
-        provider = InMemoryProvider(**util.pick(kwargs, util.params_for(Provider.__init__)))
+        provider = InMemoryProvider(kwargs.pop('feature_dims'),
+                                    **util.pick(kwargs, util.params_for(Provider.__init__)))
         scope = ''
 
         with graph.as_default():

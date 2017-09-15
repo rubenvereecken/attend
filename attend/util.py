@@ -42,3 +42,46 @@ def pad(x, pad_width, axis=0):
     padding = [[0, 0] for _ in range(x.ndim)]
     padding[axis][1] = pad_width
     return np.pad(x, padding, mode='constant')
+
+
+def pad_and_stack(arrays, length=None, axis=0):
+    if length is None:
+        length = max(v.shape[0] for v in arrays)
+
+    def _padding(v):
+        padding = np.zeros([len(v.shape), 2], dtype=int)
+        assert length >= v.shape[axis]
+        padding[axis][1] = length - v.shape[axis]
+        return padding
+
+    return np.stack(np.pad(v, _padding(v), 'constant') for v in arrays)
+
+
+def unstack_and_unpad(arrays, lengths):
+    return [arr[:lengths[i]] for i, arr in enumerate(arrays)]
+
+
+def dict_to_args(d):
+    arg_list = []
+
+    for k, v in d.items():
+        if v is None:
+            # Don't pass None values, just 'none' values
+            continue
+            # s = 'none'
+        elif isinstance(v, bool):
+            s = str(int(v)) # Boolean is represented 0 or 1
+        elif isinstance(v, list):
+            # s = ' '.join(el for el in v)
+            s = ' '.join('--{}={}'.format(k, el) for el in v)
+            arg_list.append(s)
+            continue
+        else:
+            s = str(v)
+
+        s = '--{}={}'.format(k, s)
+
+        arg_list.append(s)
+
+    return ' '.join(arg_list)
+

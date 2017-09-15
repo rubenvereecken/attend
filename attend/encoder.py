@@ -52,7 +52,7 @@ class Encoder():
         self.const_initializer  = tf.constant_initializer(0.0)
 
 
-    def __call__(self, x, provider=None, is_training=True):
+    def __call__(self, x, provider=None, is_training=True, feature_name=None):
         with tf.variable_scope('encoder'):
             x = self.conv_network(x)
             if self.dense_spec:
@@ -62,7 +62,7 @@ class Encoder():
                 log.debug('Using a dense layer in the encoder')
                 x = self.dense(x, is_training)
             if self.encode_lstm > 0:
-                x = self._encode_lstm(x, provider, is_training)
+                x = self._encode_lstm(x, provider, is_training, feature_name)
             return x
 
 
@@ -298,7 +298,7 @@ class Encoder():
         return x
 
 
-    def _encode_lstm(self, x, provider=None, is_training=True):
+    def _encode_lstm(self, x, provider=None, is_training=True, feat_name='features'):
         from attend.provider import Provider
 
         with tf.variable_scope('encode_lstm'):
@@ -310,7 +310,8 @@ class Encoder():
             if not provider is None:
                 out, _ = tf.contrib.rnn.static_state_saving_rnn(lstm_cell, x_by_time,
                         state_saver=provider,
-                        state_name=(Provider.ENCODE_LSTM_C, Provider.ENCODE_LSTM_H))
+                        state_name=(feat_name + '.' + Provider.ENCODE_LSTM_C,
+                                    feat_name + '.' + Provider.ENCODE_LSTM_H))
             else:
                 # Dynamic because we assume difference time lengths come through
                 out, _ = tf.nn.dynamic_rnn(lstm_cell, x_by_time)

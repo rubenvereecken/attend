@@ -27,8 +27,9 @@ class Runner:
             parser.set_defaults(**{name: default})
 
         logistics = parser.add_argument_group('Logistics')
+        # nargs='*' doesn't work if you use '='
         logistics.add_argument('-i', '--data_file', dest='data_file', required=True,
-                               nargs='*')
+                               action='append')
         logistics.add_argument('--val_data', type=str, default=None)
         logistics.add_argument('--debug', dest='debug', action='store_true')
         logistics.add_argument('--log_dir', type=str, default='log',

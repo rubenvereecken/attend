@@ -20,29 +20,37 @@ class Evaluator:
         self.sess = tf.Session(graph=self.graph)
         # from tensorflow.python import debug as tf_debug
         # self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
+        self.build_inits()
 
 
-    def initialize(self):
+    def build_inits(self):
         self.out_ops, self.ctx_ops = self._build_model()
         self.loss_ops, self.loss_reset_op = self._build_losses()
         self.reset_op = self._build_reset()
+        self.loss_init = self._variables_initializer('losses')
+        self.var_init = self._variables_initializer()
 
-        self._initialize_variables()
 
-
-    def _initialize_variables(self):
+    def load_checkpoint(self, ckpt=None):
         with self.graph.as_default():
-            # checkpoint = self.log_dir + '/model.ckpt-50000'
-            checkpoint = tf.train.latest_checkpoint(self.log_dir)
-            if checkpoint is None:
-                tf.logging.warning('No checkpoint file found in {}; reinitializing'.format(self.log_dir))
+            if ckpt is None:
+                checkpoint = tf.train.latest_checkpoint(self.log_dir)
+            elif isinstance(ckpt, int):
+                state = tf.train.get_checkpoint_state(self.log_dir)
+                try:
+                    checkpoint = next(p for p in state.all_model_checkpoint_paths \
+                                    if p.endswith(str(ckpt)))
+                except:
+                    raise Exception('Checkpoint {} not found'.format(ckpt))
+                checkpoint_path = state
 
             if not checkpoint is None:
-                self.sess.run(self._variables_initializer('losses'))
+                self.sess.run(self.loss_init)
                 saver = self.get_saver()
                 saver.restore(self.sess, checkpoint)
             else:
-                self.sess.run(self._variables_initializer())
+                tf.logging.warning('No checkpoint file found in {}; reinitializing'.format(self.log_dir))
+                self.sess.run(self.var_init)
 
 
     def _build_model(self):
@@ -54,6 +62,17 @@ class Evaluator:
             loss_ops, loss_reset = self.model.calculate_losses(self.out_ops['output'],
                     self.state_saver._sequences['conflict'],
                     self.ctx_ops['key'], self.ctx_ops['length'], 'losses')
+            # TODO for icc
+            self.placeholders_for_loss = dict(
+                predictions=tf.placeholder(tf.float32, [None, None, 1]),
+                targets=tf.placeholder(tf.float32, [None, None, 1]),
+                lengths=tf.placeholder(tf.int32, [None])
+            )
+            from attend.losses import icc
+            self.icc_loss = self.model.calculate_loss(
+                self.placeholders_for_loss['predictions'],
+                self.placeholders_for_loss['targets'],
+                self.placeholders_for_loss['lengths'], icc(3,1))
         return loss_ops, loss_reset
 
 
@@ -103,15 +122,31 @@ class Evaluator:
         return args
 
 
-    def evaluate(self, sequence, targets=None, key='input_seq', feed_dict={}):
+    def evaluate(self, sequence, targets=None, keys=None, feed_dict={}):
         """
         In memory evaluation
         """
 
+        if isinstance(sequence, list):
+            # Assume multiple, pad to one
+            lengths = [len(seq) for seq in sequence]
+            from attend.util import pad_and_stack
+            sequences = pad_and_stack(sequence)
+        else:
+            lengths = [len(sequence)]
+            sequences = np.expand_dims(sequence, 0)
+
+        if isinstance(targets, list):
+            targets = pad_and_stack(targets)
+        else:
+            targets = np.expand_dims(targets, 0)
+
+        del sequence
+
         T = self.model.T
-        D = 256
-        l = sequence.shape[0]
+        l = sequences.shape[1]
         n_batches = np.ceil(l / T).astype(int)
+        batch_size = sequences.shape[0]
 
         # total = { 'output': np.empty((l,1)) }
         total = dict(output=[])
@@ -120,24 +155,34 @@ class Evaluator:
             total.update(dict(attention=[], alpha=[]))
 
         state_saver = self.state_saver
-        key = '{}:{}'.format(key, '0')
-        keys = []
+        if keys is None:
+            keys = ['input_seq:{}'.format(i) for i in range(batch_size)]
+        else:
+            keys = ['{}:{}'.format(k, i) for i, k in enumerate(keys)]
+        out_keys = []
 
         # history = np.zeros(())
 
-        for i in range(n_batches):
+        import tqdm
+        for i in tqdm.tqdm(range(n_batches)):
             offset = i * T
-            batch = sequence[offset:offset+T]
-            batch_l = batch.shape[0]
-            batch = util.pad(batch, T-batch_l)
+            batch = sequences[:,offset:offset+T]
+            lengths_used = np.ones_like(lengths) * offset
+            leftover_lengths = np.max(np.array([np.zeros_like(lengths),
+                                                lengths - lengths_used]), axis=0)
+            batch_lengths = np.min(np.array([np.ones_like(lengths) * T,
+                                             leftover_lengths]), axis=0)
+            batch_l = T
+            if batch.shape[1] != T:
+                batch = util.pad(batch, T-batch.shape[1], 1)
 
-            state_dict = { state_saver._sequences['images']: [batch],
+            state_dict = { state_saver._sequences['images']: batch,
                         state_saver._full_key: ['{:05d}_of_{:05d}:{}'.format(i,
-                            n_batches, key)],
-                        state_saver._key: [key],
-                        state_saver._length: [batch_l],
-                        state_saver._sequence: [i],
-                        state_saver._sequence_count: [n_batches],
+                            n_batches, key) for key in keys],
+                        state_saver._key: keys,
+                        state_saver._length: batch_lengths,
+                        state_saver._sequence: [i] * batch_size,
+                        state_saver._sequence_count: [n_batches] * batch_size,
                         }
             feed_dict = feed_dict.copy()
             feed_dict.update(state_dict)
@@ -145,9 +190,11 @@ class Evaluator:
             ctx_ops = self.ctx_ops.copy()
 
             if not targets is None:
-                target_batch = targets[offset:offset+T]
-                target_batch = util.pad(target_batch, T-batch_l)
-                feed_dict[state_saver._sequences['conflict']] = [target_batch]
+                target_batch = targets[:,offset:offset+T]
+                if target_batch.shape[1] != T:
+                    target_batch = util.pad(target_batch, T-target_batch.shape[1], 1)
+                # target_batch = util.pad(target_batch, T-batch_l)
+                feed_dict[state_saver._sequences['conflict']] = target_batch
 
                 ctx_ops.update(self.loss_ops['context'])
                 out, ctx, total_loss = self.sess.run((self.out_ops, ctx_ops, self.loss_ops['total']), feed_dict=feed_dict)
@@ -156,20 +203,35 @@ class Evaluator:
                 out, ctx = self.sess.run((self.out_ops, ctx_ops), feed_dict=feed_dict)
 
             for k, v in out.items():
-                total[k].append(v[0][:batch_l])
+                total[k].append(v)
                 # total[k][offset:offset+batch_l] = v[0][:batch_l]
-            keys.append(ctx['key'][0].decode())
+            out_keys.extend([key.decode() for key in ctx['key']])
 
         # Reset saved states for this sequence
-        keys = list(set(keys))
-        self.reset(keys)
+        out_keys = list(set(out_keys))
+        self.reset(out_keys)
 
-        total = { k: np.concatenate(v) for k, v in total.items() }
+        total = { k: np.concatenate(v, 1) for k, v in total.items() }
+
+        # Calculate ICC
+        assert not targets is None, 'for now'
+        icc_score = self.sess.run(self.icc_loss, {
+            self.placeholders_for_loss['predictions']: (total['output'][:,:max(lengths)]),
+            self.placeholders_for_loss['targets']: np.expand_dims(targets, -1),
+            self.placeholders_for_loss['lengths']: lengths,
+        })
+        total['icc'] = icc_score
+
+        total['output'] = util.unstack_and_unpad(total['output'], lengths)
+
+        if len(total['output']) == 1:
+            total['output'] = total['output'][0]
 
         if not targets is None:
             total.update(total_loss)
 
-        total['output'] = np.resize(total['output'], [l])
+
+        # total['output'] = np.resize(total['output'], [l])
 
         return total
 
@@ -214,7 +276,8 @@ class ImportEvaluator(Evaluator):
 
 
     @classmethod
-    def import_from_logs(cls, log_dir, feat_dim=(272,), meta_path='eval_model.meta.proto'):
+    def import_from_logs(cls, log_dir, feat_dim=(272,), meta_path='eval_model.meta.proto',
+                         initialize=True):
         if not os.path.isdir(log_dir):
             raise Exception('Log dir does not exist')
 
@@ -227,7 +290,8 @@ class ImportEvaluator(Evaluator):
                 **util.pick(args, util.params_for(AttendModel.__init__)))
 
         e = cls(model, log_dir, meta_path, args)
-        e.initialize()
+        if initialize:
+            e.load_checkpoint()
 
         return e
 
@@ -287,7 +351,8 @@ class RebuildEvaluator(Evaluator):
 
     @classmethod
     def rebuild_from_logs(cls, log_dir, extra_args={},
-                          feat_dim=(272,), is_training=False):
+                          feat_dim=(272,), is_training=False,
+                          initialize=True):
         """
         Rebuilds the model from logs based on the saved cli arguments
         and saved network weights.
@@ -317,7 +382,8 @@ class RebuildEvaluator(Evaluator):
 
         evaluator = cls(encoder, provider, model, log_dir, args,
                         is_training=is_training)
-        evaluator.initialize()
+        if initialize:
+            evaluator.load_checkpoint()
 
         return evaluator
 

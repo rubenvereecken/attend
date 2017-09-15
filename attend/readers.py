@@ -120,19 +120,19 @@ def generate_single_sequence_example(
         return example, target, context
 
 
-def generate_single_sequence_example_from_hdf5(filename, feat_name, scope, **kwargs):
-    reader = HDF5SequenceReader(filename, feat_name)
+def generate_single_sequence_example_from_hdf5(filename, target_name, scope, **kwargs):
+    reader = HDF5SequenceReader(filename, target_name)
     return generate_single_sequence_example(reader, scope, **kwargs)
 
 
 class HDF5SequenceReader:
-    def __init__(self, filename, feat_name):
+    def __init__(self, filename, target_name):
         import h5py
         # TODO close
         f = h5py.File(filename, 'r')
         self.f = f
         self.features = f['features']
-        self.targets = f[feat_name]
+        self.targets = f[target_name]
         self.keys = list(self.features.keys())
 
         # TODO should communicate these shapes somewhere because they are fixed
@@ -140,6 +140,9 @@ class HDF5SequenceReader:
         self.feature_shape = self.features[self.keys[0]].shape[1:]
         self.target_shape = self.targets[self.keys[0]].shape[1:]
         self._generator = self._generator_fun()
+
+    def close(self):
+        self.f.close()
 
     def _generator_fun(self):
         for key in self.keys:
@@ -153,7 +156,7 @@ class HDF5SequenceReader:
         return next(self._generator)
 
 
-def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
+def read_and_decode_from_tfrecords(filename_q, sequence_dims, scope):
     with tf.variable_scope('read_tfrecords'):
         reader = tf.TFRecordReader()
         _, serialized_example = reader.read(filename_q)
@@ -161,40 +164,41 @@ def read_and_decode_from_tfrecords(filename_q, feat_name, scope):
         context, feature_lists = tf.parse_single_sequence_example(
                 serialized_example,
                 context_features={
-                    'key'              : tf.FixedLenFeature([], dtype = tf.string),
-                    # TODO just get it from shape
-                    # 'features.shape' : tf.FixedLenFeature([], dtype = tf.int64)
+                    'key'       : tf.FixedLenFeature([], dtype = tf.string),
                     'num_frames': tf.FixedLenFeature([], dtype=tf.int64)
                 },
                 sequence_features={
-                    # 'features' : tf.FixedLenSequenceFeature([], dtype  = tf.string),
-                    'features': tf.FixedLenSequenceFeature([], dtype=tf.float32),
-                    feat_name  : tf.FixedLenSequenceFeature([1], dtype = tf.float32)
+                    k: tf.FixedLenSequenceFeature([], dtype=tf.float32) \
+                    for k, dims in sequence_dims.items()
                 },
+                # sequence_features={
+                #     # 'features' : tf.FixedLenSequenceFeature([], dtype  = tf.string),
+                #     'features': tf.FixedLenSequenceFeature([], dtype=tf.float32),
+                #     target_name  : tf.FixedLenSequenceFeature([1], dtype = tf.float32)
+                # },
                 name='parse_sequence')
 
         # images = tf.decode_raw(feature_lists['features'], tf.float32)
-        images = feature_lists['features']
+        # images = feature_lists['features']
         if Log.debug:
             context['key'] = tf.Print(context['key'], [context['key'], context['num_frames']], message='video ')
         context['num_frames'] = tf.cast(context['num_frames'], tf.int32)
 
-        return images, feature_lists[feat_name], context
+        return feature_lists, context
 
 
-def shuffle_data_and_context(example, target, context, capacity, min_after_dequeue=None):
-    q_in = {'example': example, 'target': target}
+def shuffle_data_and_context(sequences, context, capacity, min_after_dequeue=None):
+    q_in = sequences.copy()
     q_in.update(context)
 
     out = shuffle_queue(q_in, capacity, scope='shuffle_examples')
-    example = out.pop('example')
-    target = out.pop('target')
+    sequences = { k: out.pop(k) for k in list(sequences.keys()) }
     context = out
 
-    return example, target, context
+    return sequences, context
 
 
-def read_single_sequence_example_fom_tfrecord(filenames, feat_name, scope,
+def read_single_sequence_example_fom_tfrecord(filenames, sequence_dims, scope,
         shuffle_capacity=0, num_epochs=None, **kwargs):
 
     # with tf.name_scope('read_single_tfrecord'):
@@ -202,33 +206,49 @@ def read_single_sequence_example_fom_tfrecord(filenames, feat_name, scope,
             filenames, num_epochs=num_epochs,
             name=kwargs.pop('name', 'filename_queue'))
 
-    example, target, context = read_and_decode_from_tfrecords(filename_q, feat_name, scope)
+    sequences, context = read_and_decode_from_tfrecords(filename_q, sequence_dims, scope)
 
     if shuffle_capacity > 0:
-        example, target, context = \
-            shuffle_data_and_context(example, target, context, shuffle_capacity, **kwargs)
+        sequences, context = \
+            shuffle_data_and_context(sequences, context, shuffle_capacity, **kwargs)
 
-    return example, target, context
+    return sequences, context
 
 
-def read_shape_from_tfrecords_for(filename, key='features'):
+def read_metadata_from_tfrecords(filename):
     """
     Reads the first sequence example's context to get features shape
     Assume it has a context value 'features.shape' that is an int list
     """
     import time
     start = time.time()
-    from google.protobuf.json_format import MessageToJson
+    # from google.protobuf.json_format import MessageToJson
+    # MessageToXX encodes bytes as base64, so decode to string first
+    from google.protobuf.json_format import MessageToDict, base64
     import simplejson as json
 
     raw_example = next(tf.python_io.tf_record_iterator(filename))
     # Don't read a sequence example, this will just read the context
-    context = tf.train.Example.FromString(raw_example)
-    context = json.loads(MessageToJson(context))
-    raw_shape = context['features']['feature']['{}.shape'.format(key)]['int64List']['value']
-    shape = tuple(map(int, raw_shape))
-    print('Took {:.2f}s to infer {} shape'.format(time.time()-start, key))
-    return shape
+    pb_context = tf.train.Example.FromString(raw_example)
+    # context = json.loads(MessageToJson(pb_context))
+    context = MessageToDict(pb_context)
+    context = context['features']['feature']
+
+    def _decode_bytes(v):
+        return base64.b64decode(v).decode()
+
+    try:
+        feature_keys = list(map(_decode_bytes,
+                                context['feature_keys']['bytesList']['value']))
+    except:
+        log.warning('No feature keys found in tfrecords, falling back to `features`')
+        feature_keys = ['features']
+
+    raw_shapes = OrderedDict((key, context['{}.shape'.format(key)]['int64List']['value']) \
+                  for key in feature_keys)
+    shapes = { key: tuple(map(int, raw_shape)) for key, raw_shape in raw_shapes.items() }
+    print('Took {:.2f}s to infer feature shapes'.format(time.time()-start))
+    return shapes
 
 
 def shuffle_queue(d, capacity, min_after_dequeue=None, scope=None):
