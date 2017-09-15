@@ -19,13 +19,14 @@ import attend.pre.util as util
 
 
 parser = argparse.ArgumentParser(description='blub')
-parser.add_argument('-i', '--in_file', type=str,
+parser.add_argument('in_file', type=str,
                     help='')
 parser.add_argument('-o', '--out', type=str, required=True,
                     help='dir to write hf5 files to')
 parser.add_argument('--train_frac', type=float, default=0.8)
 parser.add_argument('--validation_frac', type=float, default=0.2)
 parser.add_argument('--test_frac', type=float, default=0.)
+parser.add_argument('-k', '--keys_file', type=str)
 
 parser.set_defaults(debug=False)
 
@@ -54,7 +55,7 @@ def extract(
                 out_group.create_dataset(key, data=group[key])
     out.close()
 
-def process(in_file, out_dir, split_names, split_fracs):
+def process_by_fracs(in_file, out_dir, split_names, split_fracs):
     assert len(split_names) == len(split_fracs)
     assert len(split_names) > 0
 
@@ -106,14 +107,30 @@ def main():
     in_ext = args.in_file.split('.')[-1]
     assert in_ext in ['hdf5'], 'Unsupported format {}'.format(in_ext)
 
-    split_names = ['train', 'val', 'test']
-    split_fracs = [args.train_frac, args.validation_frac, args.test_frac]
-    assert sum(split_fracs) == 1., 'Fractions should sum to 1'
+    if args.keys_file:
+        print('Splitting using a keys file')
 
-    splits = filter(lambda x: x[1] != 0, zip(split_names, split_fracs))
-    split_names, split_fracs = zip(*splits)
+        assert args.out.split('.')[-1] in ['hdf5'], 'Only hdf5 output supported'
 
-    process(args.in_file, args.out, split_names, split_fracs)
+        with open(args.keys_file, 'r') as keys_file:
+            keys = keys_file.readlines()
+            keys = list(filter(lambda k: k and len(k),
+                               map(lambda k: k.strip(), keys)))
+            assert len(keys)
+            print('Read {} keys'.format(len(keys)))
+
+        extract(args.in_file, args.out, keys)
+
+    else:
+        print('Splitting by fractions')
+        split_names = ['train', 'val', 'test']
+        split_fracs = [args.train_frac, args.validation_frac, args.test_frac]
+        assert sum(split_fracs) == 1., 'Fractions should sum to 1'
+
+        splits = filter(lambda x: x[1] != 0, zip(split_names, split_fracs))
+        split_names, split_fracs = zip(*splits)
+
+        process_by_fracs(args.in_file, args.out, split_names, split_fracs)
 
 
 if __name__ == '__main__':

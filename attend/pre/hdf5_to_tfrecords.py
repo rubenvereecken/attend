@@ -18,7 +18,7 @@ import attend.pre.util as util
 
 
 parser = argparse.ArgumentParser(description='blub')
-parser.add_argument('-i', '--in_file', type=str,
+parser.add_argument('in_file', type=str,
                     help='input frames directory, containing subfolders')
 parser.add_argument('-o', '--out', type=str, default=None,
                     help='dir to write hf5 files to')
@@ -45,7 +45,9 @@ def _int64_feature(value):
 def _int64_featurelist(value):
     return tf.train.FeatureList(feature=list(map(_int64_feature, value)))
 def _bytes_feature(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+    if not type(value) == list:
+        value = [value]
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
 
 def process(
         in_file, out_file
@@ -53,16 +55,26 @@ def process(
     with h5py.File(in_file, 'r') as f:
         # Assume each group contains sequences and dataset names in groups match
         # if they target the same sequence
-        groups = list(f.values())
+        groups = util.h5_find_deepest_groups(f)
+        print(list(g.name for g in groups))
         group_keys = [set(g.keys()) for g in groups]
         common_keys = _intersect_all(group_keys)
+
+        if '/features' in [group.name for group in groups]:
+            feature_keys = ['features']
+        else:
+            feature_keys = list(f['features'].keys())
+        print('feature_keys', feature_keys)
 
         tfrecord_writer = tf.python_io.TFRecordWriter(out_file)
 
         for key in tqdm(common_keys):
-            ctx = dict(key=_bytes_feature(key.encode('utf8')))
+            ctx = dict(key=_bytes_feature(key.encode('utf8')),
+                       feature_keys=_bytes_feature(list(map(
+                                          lambda k: k.encode(), feature_keys))))
             features = {}
-            for group_name, group in f.items():
+            for group in groups:
+                group_name = group.name.split('/')[-1]
                 dset = group[key]
                 arr = dset.value.ravel() # tfrecord only does flat
                 if np.issubdtype(dset.dtype, np.float):
@@ -72,7 +84,6 @@ def process(
                 # print('{} | {} | final {}'.format(group_name, dset.shape, arr.shape))
 
                 features[group_name] = feature
-                # TODO tuple like context feature
                 ctx['{}.shape'.format(group_name)] = _int64_feature(list(dset.shape))
                 ctx['num_frames'] = _int64_feature(dset.shape[0])
 

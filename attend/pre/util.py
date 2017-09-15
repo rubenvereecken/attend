@@ -1,5 +1,31 @@
 import os
+import shutil
 import numpy as np
+
+def append_if(l, pred):
+    def _append_if(name, v):
+        if pred(name, v):
+            l.append(v)
+    return _append_if
+
+def h5_find_all_groups(f):
+    import h5py
+    groups = []
+    append_if_group = append_if(groups, lambda name, v: isinstance(v, h5py.Group))
+    h5py.Group.visititems(f, append_if_group)
+    return groups
+
+
+def h5_find_deepest_groups(f):
+    import h5py
+    groups = []
+    def _is_group_and_contains_datasets(name, v):
+        return isinstance(v, h5py.Group) and len(v.keys()) > 0 and \
+            any(map(lambda child: isinstance(child, h5py.Dataset), v.values()))
+    maybe_append = append_if(groups, _is_group_and_contains_datasets)
+    h5py.Group.visititems(f, maybe_append)
+    return groups
+
 
 def find_deepest_dirs(path='.'):
     for dir, subdirs, files in os.walk(path):
@@ -32,9 +58,20 @@ def makedirs_if_needed(file_or_dir):
         os.makedirs(path, exist_ok=True)
 
 
-def rm_if_needed(file):
+def confirm(s):
+    in_ = input(s)
+
+
+def rm_if_needed(file, ask=False):
     if os.path.exists(file):
-        os.remove(file)
+        if os.path.isdir(file) and ask:
+            permission = input('{} is an existing directory, remove? (y/N)'.format(file))
+            if permission.strip().lower() != 'y':
+                return
+        if os.path.isdir(file):
+            shutil.rmtree(file)
+        else:
+            os.remove(file)
 
 
 # https://github.com/albanie/pts_loader
