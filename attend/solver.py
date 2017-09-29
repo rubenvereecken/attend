@@ -164,6 +164,17 @@ class AttendSolver():
             outputs = out['output']
             loss_op = self.model.calculate_loss(outputs, provider.targets, ctx['length'])
 
+            # This bit is for alpha regularization loss
+            reg_losses = g.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+            assert len(reg_losses) <= 1, 'I know of only one, just making sure'
+            reg_beta = .5
+            if len(reg_losses) > 0:
+                log.info('Adding regularization to loss function')
+                reg_loss = reg_losses[0]
+                loss_op += reg_beta * reg_loss
+            else:
+                log.info('No regularization to perform')
+
         if not val_provider is None:
             n_vars = len(tf.trainable_variables())
 
@@ -251,10 +262,6 @@ class AttendSolver():
         else:
             config = tf.ConfigProto()
 
-        # Managed session will do the necessary init_ops, start queue runners,
-        # start checkpointing/summary service
-        # It will also recover from a checkpoint if available
-        # with sv.managed_session(config=config) as sess:
         train_sess  = tf.Session(graph=g)
         sess = train_sess
         # from tensorflow.python import debug as tf_debug

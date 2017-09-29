@@ -13,11 +13,13 @@ class Encoder():
                  use_dropout=False, use_maxnorm=False,
                  dense_spec=None,
                  encode_lstm=None,
+                 lstm_impl=None,
                  use_batch_norm=True, batch_norm_decay=None, use_batch_renorm=False
                  ):
         self.use_batch_norm = use_batch_norm
         self.batch_norm_decay = batch_norm_decay
         self.use_batch_renorm = use_batch_renorm
+        self.lstm_impl = lstm_impl
 
         self.use_dropout = use_dropout
 
@@ -302,7 +304,10 @@ class Encoder():
         from attend.provider import Provider
 
         with tf.variable_scope('encode_lstm'):
-            lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.encode_hidden_units)
+            from attend.common import get_lstm_implementation
+            lstm_cell = get_lstm_implementation(self.lstm_impl)(num_units=self.encode_hidden_units)
+            print(lstm_cell)
+
             x_by_time = tf.split(value=x, num_or_size_splits=self.time_steps, axis=1)
             x_by_time = list(map(lambda x: tf.squeeze(x, axis=1), x_by_time))
             # assert len(x_by_time) == self.time_steps

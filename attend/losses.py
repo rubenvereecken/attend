@@ -146,3 +146,11 @@ def icc_loss(case, typ, weighted=True):
         return icc_loss
 
     return icc_loss_wrapper
+
+
+def sparsity(x):
+    with tf.variable_scope('sparsity'):
+        k = tf.cast(tf.reduce_prod(tf.shape(x)), tf.float32)
+        denom = tf.sqrt(k) - tf.reduce_sum(x) / tf.norm(x)
+        num = tf.sqrt(k) - 1
+        return denom / num

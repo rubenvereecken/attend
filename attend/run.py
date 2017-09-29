@@ -57,6 +57,7 @@ class Runner:
         training.add_argument('--update_rule', type=str)
         training.add_argument('--learning_rate', type=float)
         training.add_argument('--loss_function', type=str)
+        training.add_argument('--input_noise_variance', type=float)
 
         encoder = parser.add_argument_group('Encoder')
         encoder.add_argument('--conv_impl', type=str)
@@ -74,7 +75,7 @@ class Runner:
         _boolean_argument('use_batch_renorm', network)
         network.add_argument('--batch_norm_decay', type=float)
         network.add_argument('-L', '--num_image_patches', type=int)
-
+        network.add_argument('--lstm_impl', type=str)
 
         decoder = parser.add_argument_group('Decoder')
         decoder.add_argument('--attention_impl', type=str)
@@ -86,6 +87,8 @@ class Runner:
         decoder.add_argument('--sampling_scheme', type=str)
         decoder.add_argument('--sampling_min', type=float)
         decoder.add_argument('--sampling_decay_steps', type=int)
+        _boolean_argument('regularize_alpha', decoder)
+        _boolean_argument('lastenc2out', decoder)
 
         registered_params = [action.dest for action in parser._optionals._group_actions[1:]]
 

@@ -18,6 +18,7 @@ class Defaults:
         use_dropout               = False,
         dropout                   = .75,
         use_maxnorm = False,
+        input_noise_variance = 0,
 
         use_batch_norm = False,
         # NOTE if training good but validation low, lower decay
@@ -36,6 +37,9 @@ class Defaults:
         learn_initial_states      = True,
         final_activation = 'none',
         loss_function = 'mse',
+
+        # TODO verify
+        lstm_impl = 'basic',
 
         # Scheduled sampling
         sampling_scheme      = 'linear',

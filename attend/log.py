@@ -87,12 +87,12 @@ class Log:
             print('Failed to get git version, skipping')
 
     @classmethod
-    def save_hostname(cls, file_name='host'):
+    def save_hostname(cls, file_name='hosts'):
         import socket
         hostname = socket.gethostname()
         file_path = cls.log_dir + '/{}'.format(file_name)
-        with open(file_path, 'w') as f:
-            f.write(str(hostname))
+        with open(file_path, 'a') as f:
+            f.write(str(hostname) + '\n')
 
     @classmethod
     def save_meta(cls, d, file_name='meta'):
@@ -118,31 +118,7 @@ class Log:
             print('Not a condor machine or something went wrong')
 
     @classmethod
-    def last_logdir(cls, path, prefix=None):
-        import re
-        r = re.compile('^((?P<prefix>.*?)_)?' +
-                       '(?P<time_stamp>[0-9]{2}-[0-9]{2}-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2})' +
-                       '(\.(?P<cluster>[0-9]{5}))?')
-        dirs = os.listdir(path)
-        matches = zip(map(lambda s: r.match(s), dirs), dirs)
-        matches = filter(lambda x: x[0], matches)
-        matches = map(lambda x: (x[0].groupdict(), x[1]), matches)
-
-        if not prefix is None:
-            matches = filter(lambda m: m[0]['prefix'] == prefix, matches)
-
-        matches = map(lambda s: (util.parse_timestamp(s[0]['time_stamp']), s[1]), matches)
-        matches = sorted(matches, key=lambda x: x[0])
-
-        if len(matches) > 0:
-            return path + '/' + matches[-1][1]
-
-        return None
-
-    @classmethod
     def get_args(cls, path, filename='args.cson'):
         with open(path + '/' + filename, 'r') as f:
             args = cson.load(f)
         return args
-
-

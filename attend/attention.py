@@ -112,10 +112,12 @@ class OldTimeNaive(Attention):
     Differences:
         - originally used relu activation
         - originally projected features x onto their own dimension
-            ( I should add that back )
         - Works on the D_enc dimension, not D_attention, which isn't used
         - Since there is no D_attention, the memory x does not get projected
     """
+    def __init__(self, project_features=True):
+        super().__init__()
+        self._project_features = project_features
 
     def __call__(self, x, h, reuse=False):
         """
@@ -127,6 +129,18 @@ class OldTimeNaive(Attention):
         H = h.shape.as_list()[-1]
 
         with tf.variable_scope('attention_layer', reuse=reuse):
+            # The original version projects features, same dimensions
+            if self._project_features:
+                W_x = tf.get_variable(
+                    'W_x', [D_enc, D_enc],
+                    initializer=self.weight_initializer)
+                b_x = tf.get_variable(
+                    'b_x', [D_enc],
+                    initializer=self.const_initializer)
+                x_proj = tf.einsum('ijk,kl->ijl', x, W_x) + b_x
+            else:
+                x_proj = x
+
             W = tf.get_variable(
                 'W', [H, D_enc],
                 initializer=self.weight_initializer)
@@ -134,7 +148,7 @@ class OldTimeNaive(Attention):
                 'b', [D_enc],
                 initializer=self.const_initializer)
             h_att = tf.nn.relu(
-                x + tf.expand_dims(tf.matmul( h, W), 1) + b,
+                x_proj + tf.expand_dims(tf.matmul( h, W), 1) + b,
                 name='h_att')
 
             w_att = tf.get_variable('w_att', [D_enc, 1],

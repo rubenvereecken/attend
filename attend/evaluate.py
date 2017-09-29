@@ -73,6 +73,10 @@ class Evaluator:
                 self.placeholders_for_loss['predictions'],
                 self.placeholders_for_loss['targets'],
                 self.placeholders_for_loss['lengths'], icc(3,1))
+            self.icc_loss_unweighted = self.model.calculate_loss(
+                self.placeholders_for_loss['predictions'],
+                self.placeholders_for_loss['targets'],
+                self.placeholders_for_loss['lengths'], icc(3,1,False))
         return loss_ops, loss_reset
 
 
@@ -95,7 +99,7 @@ class Evaluator:
         """
         Reset state variables and streaming metrics
         """
-        self.sess.run([self.reset_op, self.loss_reset_op], { self.state_saver._key: keys })
+        return self.sess.run([self.reset_op, self.loss_reset_op], { self.state_saver._key: keys })
 
 
     def run(self, *args, **kwargs):
@@ -122,7 +126,8 @@ class Evaluator:
         return args
 
 
-    def evaluate(self, sequence, targets=None, keys=None, feed_dict={}):
+    def evaluate(self, sequence, targets=None, keys=None, feed_dict={},
+                 show_progress=True):
         """
         In memory evaluation
         """
@@ -138,10 +143,14 @@ class Evaluator:
 
         if isinstance(targets, list):
             targets = pad_and_stack(targets)
-        else:
+        elif not targets is None:
             targets = np.expand_dims(targets, 0)
 
         del sequence
+        if sequences.ndim > 3:
+            sequences = np.reshape(sequences, (*sequences.shape[:2], -1))
+        if not targets is None and targets.ndim > 3:
+            targets = np.reshape(targets, (*targets.shape[:2], -1))
 
         T = self.model.T
         l = sequences.shape[1]
@@ -161,10 +170,10 @@ class Evaluator:
             keys = ['{}:{}'.format(k, i) for i, k in enumerate(keys)]
         out_keys = []
 
-        # history = np.zeros(())
-
         import tqdm
-        for i in tqdm.tqdm(range(n_batches)):
+        progress_wrapper = tqdm.tqdm if show_progress else lambda i: i
+
+        for i in progress_wrapper(range(n_batches)):
             offset = i * T
             batch = sequences[:,offset:offset+T]
             lengths_used = np.ones_like(lengths) * offset
@@ -176,7 +185,9 @@ class Evaluator:
             if batch.shape[1] != T:
                 batch = util.pad(batch, T-batch.shape[1], 1)
 
-            state_dict = { state_saver._sequences['images']: batch,
+            features = state_saver._sequences.get('features') if 'features' \
+                in state_saver._sequences else state_saver._sequences.get('images')
+            state_dict = { features: batch,
                         state_saver._full_key: ['{:05d}_of_{:05d}:{}'.format(i,
                             n_batches, key) for key in keys],
                         state_saver._key: keys,
@@ -197,7 +208,9 @@ class Evaluator:
                 feed_dict[state_saver._sequences['conflict']] = target_batch
 
                 ctx_ops.update(self.loss_ops['context'])
+                # self.out_ops['saved_output'] = self.provider.states['output']
                 out, ctx, total_loss = self.sess.run((self.out_ops, ctx_ops, self.loss_ops['total']), feed_dict=feed_dict)
+                # print(out.pop('saved_output'))
 
             else:
                 out, ctx = self.sess.run((self.out_ops, ctx_ops), feed_dict=feed_dict)
@@ -207,6 +220,9 @@ class Evaluator:
                 # total[k][offset:offset+batch_l] = v[0][:batch_l]
             out_keys.extend([key.decode() for key in ctx['key']])
 
+        # lstm_h = self.sess.run(state_saver.state('features.lstm_h'), feed_dict=feed_dict)
+        # print(lstm_h)
+
         # Reset saved states for this sequence
         out_keys = list(set(out_keys))
         self.reset(out_keys)
@@ -215,12 +231,15 @@ class Evaluator:
 
         # Calculate ICC
         assert not targets is None, 'for now'
-        icc_score = self.sess.run(self.icc_loss, {
-            self.placeholders_for_loss['predictions']: (total['output'][:,:max(lengths)]),
+        predictions = total['output'][:,:max(lengths)]
+        # print('Total lengths', np.sum(lengths))
+        # print(np.prod(predictions.shape) - np.count_nonzero(predictions), np.prod(predictions.shape))
+        icc = self.sess.run(self.icc_loss, {
+            self.placeholders_for_loss['predictions']: predictions,
             self.placeholders_for_loss['targets']: np.expand_dims(targets, -1),
             self.placeholders_for_loss['lengths']: lengths,
         })
-        total['icc'] = icc_score
+        total['icc'] = icc
 
         total['output'] = util.unstack_and_unpad(total['output'], lengths)
 
@@ -286,7 +305,7 @@ class ImportEvaluator(Evaluator):
 
     @classmethod
     def import_from_logs(cls, log_dir, meta_path='eval_model.meta.proto',
-                         initialize=True):
+                         initialize_step=50000):
         if not os.path.isdir(log_dir):
             raise Exception('Log dir does not exist')
 
@@ -299,8 +318,8 @@ class ImportEvaluator(Evaluator):
                 **util.pick(args, util.params_for(AttendModel.__init__)))
 
         e = cls(model, log_dir, meta_path, args)
-        if initialize:
-            e.load_checkpoint()
+        if initialize_step and initialize_step > 0:
+            e.load_checkpoint(initialize_step)
 
         return e
 
@@ -338,7 +357,7 @@ class RebuildEvaluator(Evaluator):
 
 
     def evaluate(self, sequence, targets=None, key=None, feed_dict={},
-                 epsilon=None):
+                 epsilon=None, **kwargs):
         """
         Arguments:
             epsilon: to be added to feed_dict; convenience argument
@@ -355,7 +374,8 @@ class RebuildEvaluator(Evaluator):
 
             feed_dict.update({ epsilon_tensor: epsilon })
 
-        return super().evaluate(sequence, targets, key, feed_dict=feed_dict)
+        return super().evaluate(sequence, targets, key, feed_dict=feed_dict,
+                                **kwargs)
 
 
     @classmethod
@@ -384,7 +404,7 @@ class RebuildEvaluator(Evaluator):
             tf.logging.info('Changed sampling scheme to fixed_epsilon')
 
         encoder = util.init_with(Encoder, args)
-        provider = InMemoryProvider(encoder=encoder, dim_feature=feat_dim,
+        provider = InMemoryProvider(encoder=encoder, feature_dims={'features':feat_dim},
                 **util.pick(args, util.params_for(Provider.__init__)))
         model = AttendModel(provider, encoder,
                 **util.pick(args, util.params_for(AttendModel.__init__)))

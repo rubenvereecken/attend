@@ -4,6 +4,7 @@ import tensorflow as tf
 from attend.log import Log
 import attend
 from attend import tf_util
+import attend.attention
 from attend.attention import BahdanauAttention
 from attend.sample import get_sampler
 from attend.common import get_activation, get_loss_function
@@ -23,16 +24,19 @@ class AttendModel():
                  use_batch_norm=True,
                  batch_norm_decay=None,
                  use_batch_renorm=False,
+                 lstm_impl=None,
                  final_activation=None,
                  sampling_scheme=None,
                  sampling_min=.75,  # 75% chance to pick truth
                  sampling_decay_steps=None,
                  sampler_kwargs={}, # Just for FixedEpsilonSampler
+                 input_noise_variance=0.,
                  attention_input=None,
+                 regularize_alpha=False,
                  attention_score_nonlinearity=None,
                  num_image_patches=None,
                  # Variations to try
-                 enc2lstm=False, enc2ctx=False,
+                 enc2lstm=False, enc2ctx=False, lastenc2out=False,
                  debug=True):
         """
         Arguments:
@@ -41,13 +45,17 @@ class AttendModel():
         """
         self.sampler = get_sampler(sampling_scheme)(sampling_min, **sampler_kwargs)
         self.sampling_decay_steps = sampling_decay_steps
+        self.lstm_impl = lstm_impl
 
         self.enc2lstm = enc2lstm
         self.enc2ctx = enc2ctx
+        self.lastenc2out = lastenc2out
         self._sampling_min = sampling_min
 
         self.provider = provider
         self.encoder = encoder
+
+        self.regularize_alpha = regularize_alpha
 
         # self.flat_sequence_dims = { k: np.prod(dims) for k, dims in provider.sequence_dims }
         self.H = num_hidden
@@ -57,6 +65,7 @@ class AttendModel():
         self.use_batch_norm = use_batch_norm
         self.batch_norm_decay = batch_norm_decay
         self.use_batch_renorm = use_batch_renorm
+        self.input_noise_variance = input_noise_variance
 
         if isinstance(final_activation, str):
             self.final_activation = attend.get_activation(final_activation)
@@ -90,7 +99,9 @@ class AttendModel():
                 attention_score_nonlinearity)
         elif attention_impl == 'time_naive':
             # Backward compatibility to rebuild old models
-            self.attention_layer = attend.attention.OldTimeNaive
+            self.attention_layer = partial(attend.attention.OldTimeNaive, False)
+        elif attention_impl == 'time_projected':
+            self.attention_layer = partial(attend.attention.OldTimeNaive, True)
         else:
             raise ValueError('Invalid attention impl {}'.format(attention_impl))
 
@@ -145,6 +156,13 @@ class AttendModel():
             for k, v in provider.features.items():
                 x[k] = tf.reshape(v, [batch_size, -1, *feature_dims[k]])
 
+        if is_training and self.input_noise_variance > 0:
+            log.debug('Enabling input noise with variance %s', self.input_noise_variance)
+            x = { k: v + tf.random_normal(tf.shape(v),
+                                          stddev=tf.sqrt(self.input_noise_variance),
+                                          name=k + '.noise') \
+                 for k, v in x.items()}
+
         x_encs = { name: self.encoder(x[name], provider, is_training, name) \
                  for name in provider.feature_names}
 
@@ -163,7 +181,8 @@ class AttendModel():
             raise Exception("Not supported")
             # c, h = self._initial_lstm(x)
 
-        lstm_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.H)
+        from attend.common import get_lstm_implementation
+        lstm_cell = get_lstm_implementation(self.lstm_impl)(num_units=self.H)
 
         outputs = []
         if self.attention_layer:
@@ -249,6 +268,10 @@ class AttendModel():
 
                 with tf.name_scope(decode_lstm_scope or 'final_decode') as decode_lstm_scope:
                     final_context = tf.concat([contexts[k] for k in provider.feature_names], 1)
+                    if self.lastenc2out:
+                        assert self.attention_layer, \
+                            'This option really doesnt make sense without attention'
+                        final_context = tf.concat([final_context, x_enc[:, t, :]], 1)
                     output = self._decode(final_context, h, is_training, (t != 0))
                     outputs.append(output)
 
@@ -259,7 +282,13 @@ class AttendModel():
                 alphas = { k: tf.stack(v, axis=1, name='alpha') \
                            for k, v in alphas.items() }
 
-        control_deps = []
+                if self.regularize_alpha:
+                    from attend.losses import sparsity
+                    alpha_sparsities = { k: sparsity(alpha) for k, v in alphas.items() }
+                    total_sparsity = tf.reduce_sum(list(alpha_sparsities.values())) / len(alphas)
+                    total_density = 1 - total_sparsity
+                    tf_util.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
+                                              total_density)
 
         # Saves LSTM state so decoding can continue like normal in a next call
         if state_saver is not None:
@@ -278,15 +307,12 @@ class AttendModel():
                         state_saves.append(
                             state_saver.save_state(key, v[name], key)
                         )
-                save_state = tf.group(*state_saves)
-                control_deps.append(save_state)
 
-                with tf.control_dependencies(control_deps):
+                with tf.control_dependencies(state_saves):
                     lengths = state_saver.length
-                    # Tricksy way of injecting dependency
                     outputs = tf.identity(outputs, name='output')
         else:
-            assert len(control_deps) == 0
+            raise Exception('Not supported anymore atm')
 
         context = {
             'length': lengths,
@@ -480,13 +506,9 @@ class AttendModel():
                     [decoder_lstm_input, x_enc[:, t, :]], 1)
 
             # _ and h are the same, the LSTM output
-            _, (c, h) = lstm_cell(
-                inputs=decoder_lstm_input, state=[c, h])
+            _, (c, h) = lstm_cell(decoder_lstm_input, state=[c, h])
 
         return c, h
-
-
-
 
     def _decode(self, x, h, is_training, reuse=False):
         with tf.variable_scope('decode', reuse=reuse):

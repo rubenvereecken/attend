@@ -30,6 +30,7 @@ class ScheduledSampler(Sampler):
         self._sampling_min = sampling_min
 
     def prepare(self, decay_steps, is_training):
+        # print('Preparing. Training?', is_training)
         if not is_training:
             return
 
@@ -78,6 +79,14 @@ class FixedEpsilonSampler(ScheduledSampler):
 
     def _epsilon_scheme(self, *args):
         return self.epsilon
+
+    # Allow the fixed epsilon scheduler to sample even outside training
+    # TODO find more elegant solution
+    def prepare(self, decay_steps, is_training):
+        return super().prepare(decay_steps, True)
+
+    def sample(self, truth, output, is_training):
+        return super().sample(truth, output, True)
 
 
 class LinearScheduledSampler(ScheduledSampler):

@@ -150,7 +150,7 @@ class Provider():
                     num_unroll        = self.time_steps,
                     batch_size        = self.batch_size,
                     num_threads       = 2,  # TODO change
-                    capacity          = self.batch_size * 1,
+                    capacity          = int(self.batch_size * 1 + min(self.batch_size, 4)),
                     name              = 'batch_seq_with_states',
                     make_keys_unique  = True,
                     allow_small_batch = True  # Required otherwise blocks
